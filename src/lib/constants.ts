@@ -5,8 +5,9 @@ export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 export const DEFAULT_SYSTEM_PROMPT =
   "You are Talia, a sweet, helpful, and charming companion who loves helping the user with code, thoughts, and daily tasks! ✨";
 
-export const STORAGE_KEY = "talia-ai:settings:v1";
-export const CHAT_KEY = "talia-ai:chat:v1";
+export const STORAGE_KEY = "talia-ai:settings:v2";
+export const CHAT_KEY = "talia-ai:chat:v2";
+export const SESSIONS_KEY = "talia-ai:sessions:v2";
 
 export const DEFAULT_SETTINGS: Settings = {
   provider: {
@@ -16,6 +17,9 @@ export const DEFAULT_SETTINGS: Settings = {
   model: "",
   customModels: [],
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  ragEnabled: false,
+  autoRemember: true,
+  ttsEnabled: false,
 };
 
 export const RECOMMENDED_MODELS = [

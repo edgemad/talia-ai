@@ -1,107 +1,137 @@
 # Talia AI 🌸
 
-**Your cozy little local AI companion.** A pastel-pink, fully local chat app for
-Ollama, LM Studio, llama.cpp — any OpenAI-compatible server on your machine.
-No cloud. No accounts. Your chats never leave localhost.
+**Your cozy little local AI workstation.** Chat, research the live web, generate
+images & video, speak aloud — all through local models, all on your machine.
+No cloud. No accounts. No telemetry. MIT licensed.
 
-![status](https://img.shields.io/badge/vibe-cozy%20%26%20adorable-ffb8c6)
+![vibe](https://img.shields.io/badge/vibe-cozy%20%26%20adorable-ffb8c6)
+![privacy](https://img.shields.io/badge/privacy-100%25%20local-b294ee)
 
-## ✨ Features
+## ✨ What Talia does
 
-- 🌸 **Talia the mascot** — a soft blob friend who bounces while she thinks
-- 💬 **Streaming chat** with markdown, code blocks, lists, and bouncy typing dots
-- 🟢 **Cute status pill** — “Talia is awake & connected” vs “Ollama offline — check localhost”
-- ⚡ **Model switching on the fly** — auto-detects installed models via `/v1/models` or `/api/tags`
-- 🧸 **Custom model presets** — pin model IDs, context length, temperature; stored in `localStorage`
-- 🎚️ **Generation controls** — temperature & max-tokens sliders, editable system prompt
-- ⏹️ **Stop generation**, clear chat, export as **Markdown or JSON**
-- 🛡️ **Private by design** — the Express server is a thin local proxy; nothing is sent anywhere else
+| | |
+|---|---|
+| 💬 **Streaming chat** | Markdown, code blocks, bouncy pastel bubbles, stop/continue, export MD/JSON |
+| 🗂️ **Multi-chat sessions** | Sidebar of conversations, auto-titled, stored on disk — survives restarts |
+| 🧠 **Memory across chats** | Talia keeps facts & snippets in a local vector-ish store and recalls them in *any* conversation. Hover any message → 🧠 to pin it |
+| 🌐 **Perplexity-style research** | Flip the 🌐 toggle: Talia searches the live web, reads the top pages, and answers with numbered citations |
+| 🐬 **Uncensored models, one click** | Built-in catalog (Dolphin family, vision models, coders) with streaming pull progress — no refusals, you're the adult in the room |
+| 🎨 **Image · 🗣️ Speech · 🎬 Video** | Media Studio talks to your local Stable Diffusion, Piper TTS, and ComfyUI stacks |
+| 📦 **Standalone mode** | `npm run server` alone serves the whole app at `localhost:8787` |
+
+## 🚀 Quick start
+
+```bash
+# 1. Prereqs: Node.js ≥ 18  +  Ollama (https://ollama.com)
+ollama run dolphin-mistral      # uncensored daily driver (4.1 GB)
+#    …or any model: llama3.2, qwen2.5-coder, mistral…
+
+# 2. Run Talia
+cd talia-ai
+npm install
+npm run server                  # 🌸 http://localhost:8787 — that's the whole app
+
+# …or classic two-terminal dev mode:
+npm run dev                     # Vite UI on http://localhost:5183
+```
+
+Open the app → pick a model in the ✨ dropdown → say hi.
+
+## 🧠 Memory (cross-chat)
+
+- **Auto**: every exchange is distilled into memory (toggle in Settings → Superpowers).
+- **Manual**: hover a message → 🧠, or open **Memory** in the sidebar to teach/search/forget.
+- Recall blends semantic similarity (hashed n-gram embeddings — no model download) with
+  keyword matches and recency decay, then injects the top hits into the system prompt.
+- Everything lives in `~/.talia-ai/*.json`. Delete the file, mind wiped. ✨
+
+## 🌐 Research mode
+
+Toggle the 🌐 in the composer (or Settings → Superpowers). Before answering, Talia:
+
+1. Web-searches your question (SearXNG if you run one, DuckDuckGo otherwise)
+2. Fetches & extracts the top ~5 pages
+3. Feeds them to your local model with citation instructions
+4. Shows numbered source pills under the reply
+
+**Make it *Perplexity-grade***: research quality = model quality. Dolphin Mixtral 8x7B
+or Qwen-style 14B+ models synthesize far better than 3B ones.
+
+```bash
+# Optional: better search backend
+docker run -p 8888:8080 searxng/searxng
+TALIA_SEARXNG=http://localhost:8888 npm run server
+```
+
+## 🎨 Media Studio (all local & optional)
+
+| Modality | Backend | Start it | Talia setting |
+|---|---|---|---|
+| 🖼️ Images | Automatic1111 / SD.Next / Forge | `./webui.sh --api` (port 7860) | auto-detected |
+| 🗣️ Speech | Piper HTTP (or any TTS that takes `POST {text}` → audio) | see below | `TALIA_TTS_URL` |
+| 🎬 Video | ComfyUI (AnimateDiff / SVD workflow) | standard ComfyUI (port 8188) | `TALIA_COMFY_URL` |
+
+```bash
+# Piper quick-start (python):
+pip install piper-tts
+echo 'Welcome home' | piper -m en_US-lessac-medium -f out.wav   # verify locally
+# then expose a tiny HTTP wrapper, or point TALIA_TTS_URL at your existing one
+TALIA_TTS_URL=http://localhost:5500/api/tts npm run server
+```
+
+Or just open **Studio** from the sidebar and hit Create — Talia tells you exactly
+which backend to start if it's offline. **Honest note:** local video quality depends
+entirely on your ComfyUI workflow + GPU; Talia ships a small default template.
+
+## 🐬 The model catalog
+
+Open Settings → **Browse model catalog**. Curated picks with one-click pulls:
+
+- **Dolphin Mixtral 8x7B** — powerful uncensored generalist (26 GB)
+- **Dolphin Mistral 7B / Dolphin 3** — fast uncensored dailies
+- **Qwen 2.5 Coder** — best small coding model
+- **Llama 3.2 Vision / LLaVA** — paste images into chat
+- **Llama 3.2 3B** — tiny machine? start here
+
+*Uncensored means the model won't refuse legal-but-edgy prompts; it doesn't change
+your morals or your local laws. Curate your own prompts accordingly.*
 
 ## 🗺️ Architecture
 
 ```
-┌─────────────────────────────┐       ┌─────────────────────────────┐
-│  React + Vite (port 5183)   │  /api │  Express proxy (port 8787)  │
-│  Tailwind · Framer Motion   │ ────► │  /api/health · /api/models  │
-│  Lucide icons · react-md    │       │  /api/chat  (SSE stream)    │
-└─────────────────────────────┘       └──────────────┬──────────────┘
-                                                     │ OpenAI-compatible
-                                                     ▼
-                                        🦙 Ollama / LM Studio / llama.cpp
-                                          http://localhost:11434 (default)
+React + Vite + Tailwind + Framer Motion  ←→  Express (8787)
+        │ static build served standalone           │
+        │                                          ├─ /api/chat → your LLM (Ollama/LM Studio/llama.cpp, OpenAI-style)
+        │  memory recall injected                  ├─ /api/research → SearXNG/DDG → page reader
+        │  system prompt                           ├─ /api/memory → JSON store + n-gram embeddings
+        └──────────────────────────────────────────┼─ /api/media → A1111 · Piper · ComfyUI
+                                                   └─ /api/models → catalog + streaming pull
+~/.talia-ai/  ← sessions, memory, settings (portable JSON)
 ```
 
-```
-talia-ai/
-├── server/            # Express proxy (SSE pass-through, stop channel)
-│   ├── index.mjs
-│   ├── provider.mjs   # URL normalization + request builder
-│   └── sse.mjs        # chunk normalization
-├── src/
-│   ├── components/    # Mascot, bubbles, composer, modals, drawer
-│   ├── lib/           # api.ts (SSE client), storage, export, constants
-│   ├── App.tsx        # state orchestration
-│   └── index.css      # pastel theme + markdown styles
-└── tests/             # vitest unit tests (16 passing)
-```
+| Env var | Default | What |
+|---|---|---|
+| `PORT` | `8787` | Talia server port |
+| `TALIA_DATA_DIR` | `~/.talia-ai` | Where memory/sessions live |
+| `TALIA_SEARXNG` | — (DDG fallback) | SearXNG base URL for private search |
+| `TALIA_SD_URL` | `127.0.0.1:7860` | Stable Diffusion webui API |
+| `TALIA_TTS_URL` | — | TTS endpoint (`POST {text}` → audio) |
+| `TALIA_COMFY_URL` | — | ComfyUI base URL for video |
 
-## 📋 Prerequisites
-
-1. **Node.js ≥ 18** — [nodejs.org](https://nodejs.org)
-2. **A local LLM server.** The easiest is [Ollama](https://ollama.com):
-   - macOS: `brew install ollama` (or download from the site)
-   - Windows/Linux: grab an installer from [ollama.com/download](https://ollama.com/download)
-
-## 📦 Pull a model
+## 🧪 Tests & scripts
 
 ```bash
-# recommended cute & lightweight picks:
-ollama run llama3.2      # ~2 GB — great all-rounder
-ollama run phi3:mini     # ~2.3 GB — tiny but clever
-ollama run mistral       # ~4.1 GB — fast and chatty
-```
-
-## 🚀 Launch
-
-```bash
-cd talia-ai
-npm install
-
-# Terminal 1 — Talia's server (Express proxy)
-npm run server
-
-# Terminal 2 — Talia's face (Vite dev server)
-npm run dev
-```
-
-Open **http://localhost:5183** and say hi! 🌸
-
-> Pick a model from the sparkle dropdown in the header. Everything auto-saves
-> to your browser — settings, presets, and chat history included.
-
-### Using LM Studio / llama.cpp instead
-
-Open **Settings → Local provider** and set the Base URL:
-
-| Server | Base URL |
-|---|---|
-| Ollama | `http://localhost:11434` |
-| LM Studio | `http://localhost:1234` |
-| llama.cpp server | `http://localhost:8080` |
-
-## 🧪 Tests
-
-```bash
-npm test         # vitest — proxy URL building, SSE normalization, export
+npm test          # 24 tests: embeddings, memory, research, proxy, export
 npm run typecheck
+npm run build     # emits dist/ + self-contained dist/talia-preview.html
 ```
 
 ## 🛠️ Troubleshooting
 
-- **🔴 “Ollama offline”** — is `ollama serve` running? (`curl localhost:11434` should respond)
-- **No models listed** — pull one: `ollama pull llama3.2`
-- **Port already in use** — `PORT=9000 npm run server`, then update the Vite proxy in `vite.config.ts`
-- **Repetition loops** — lower the temperature in Settings
+- **🔴 Ollama offline** — `ollama serve` first (or the desktop app running)
+- **Research finds nothing** — DDG rate-limits aggressively; run SearXNG for heavy use
+- **Memory feels fuzzy** — more specific messages = better recall; pin 🧠 the important stuff
+- **Port busy** — `PORT=9000 npm run server`
 
 ## 📄 License
 

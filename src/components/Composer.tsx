@@ -1,16 +1,20 @@
 import { useRef } from "react";
 import { motion } from "framer-motion";
-import { Send, Square } from "lucide-react";
+import { Globe, Send, Square } from "lucide-react";
 
 export function Composer({
   onSend,
   onStop,
   busy,
+  researchEnabled,
+  onToggleResearch,
 }: {
   /** Return false to keep the typed text (e.g. no model selected yet). */
   onSend: (text: string) => boolean | void | Promise<boolean | void>;
   onStop: () => void;
   busy: boolean;
+  researchEnabled: boolean;
+  onToggleResearch: () => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -41,6 +45,19 @@ export function Composer({
               }
             }}
           />
+          <motion.button
+            whileTap={{ scale: 0.85 }}
+            onClick={onToggleResearch}
+            className={`m-1 flex h-8 w-8 items-center justify-center rounded-full transition ${
+              researchEnabled
+                ? "bg-sky-100 text-sky-500 ring-2 ring-sky-200"
+                : "text-cocoa-300 hover:bg-blush-50 hover:text-cocoa-500"
+            }`}
+            title={researchEnabled ? "Research mode ON — answers cite the live web" : "Enable research mode for this answer"}
+            aria-label="Toggle research mode"
+          >
+            <Globe size={15} />
+          </motion.button>
         </motion.div>
 
         {busy ? (
@@ -69,6 +86,7 @@ export function Composer({
       </div>
       <p className="mt-2 text-center text-[11px] text-cocoa-300">
         Talia runs fully on your machine 💗 — press Enter to send, Shift+Enter for a new line
+        {researchEnabled ? " · 🌐 research mode: answers will cite the live web" : ""}
       </p>
     </div>
   );

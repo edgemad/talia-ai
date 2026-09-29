@@ -3,8 +3,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { MessageBubble } from "./components/MessageBubble";
 import { Composer } from "./components/Composer";
 import { HeaderBar } from "./components/HeaderBar";
+import { SessionSidebar } from "./components/SessionSidebar";
 import { ModelPickerModal } from "./components/ModelPickerModal";
+import { ModelCatalogModal } from "./components/ModelCatalogModal";
 import { SettingsDrawer } from "./components/SettingsDrawer";
+import { MediaStudio } from "./components/MediaStudio";
+import { MemoryPanel } from "./components/MemoryPanel";
 import { EmptyState } from "./components/StatusPill";
 import { Mascot } from "./components/Mascot";
 import {
@@ -13,31 +17,87 @@ import {
   streamChat,
   type DiscoveredModel,
 } from "./lib/api";
-import { loadChat, makeId, saveChat } from "./lib/chatStore";
-import { loadSettings, saveSettings } from "./lib/storage";
-import { downloadFile, exportAsJson, exportAsMarkdown, timestampSlug } from "./lib/exportChat";
-import type { ChatMessage, Settings } from "./types";
+import {
+  loadSessions,
+  loadSettings,
+  migrateV1Chat,
+  saveSessions,
+  saveSettings,
+} from "./lib/storage";
+import {
+  makeId,
+} from "./lib/chatStore";
+import {
+  downloadFile,
+  exportAsJson,
+  exportAsMarkdown,
+  timestampSlug,
+} from "./lib/exportChat";
+import {
+  recallMemory,
+  rememberExchange,
+  rememberText,
+  runResearch,
+  speakText,
+} from "./lib/serverApi";
+import type { ChatMessage, ChatSession, Settings } from "./types";
+
+function newSession(): ChatSession {
+  const now = Date.now();
+  return { id: makeId(), title: "New chat", messages: [], createdAt: now, updatedAt: now };
+}
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [messages, setMessages] = useState<ChatMessage[]>(loadChat);
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    const existing = loadSessions();
+    if (existing.length > 0) return existing;
+    const { sessions: migrated } = migrateV1Chat();
+    return migrated.length > 0 ? migrated : [newSession()];
+  });
+  const [activeId, setActiveId] = useState<string>(() => {
+    const existing = loadSessions();
+    return existing[existing.length - 1]?.id ?? sessions[0]?.id ?? "active";
+  });
   const [online, setOnline] = useState(false);
   const [checking, setChecking] = useState(true);
   const [models, setModels] = useState<DiscoveredModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModels, setShowModels] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showStudio, setShowStudio] = useState(false);
+  const [showMemory, setShowMemory] = useState(false);
+  const [researchStatus, setResearchStatus] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeId) ?? sessions[sessions.length - 1],
+    [sessions, activeId],
+  );
+  const messages = activeSession?.messages ?? [];
 
   const stopFlag = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const lastRequestId = useRef<string | null>(null);
 
-  // Persist whenever settings or chat change
+  // Keep activeId valid
+  useEffect(() => {
+    if (!sessions.find((s) => s.id === activeId)) {
+      setActiveId(sessions[sessions.length - 1]?.id ?? "");
+    }
+  }, [sessions, activeId]);
+
+  // Persist
   useEffect(() => saveSettings(settings), [settings]);
-  useEffect(() => saveChat(messages), [messages]);
+  useEffect(() => {
+    if (activeSession) saveSessions(sessions);
+  }, [sessions, activeSession]);
 
-  // --- Health polling ----------------------------------------------------
+  // Health polling
   const pollHealth = useCallback(async () => {
     try {
       const { online: o } = await fetchProviderHealth(settings.provider.baseUrl);
@@ -55,19 +115,18 @@ export default function App() {
     return () => clearInterval(t);
   }, [pollHealth]);
 
-  // --- Model discovery ---------------------------------------------------
+  // Model discovery
   const refreshModels = useCallback(async () => {
     setLoadingModels(true);
     const result = await fetchModels(settings.provider.baseUrl);
-    const discovered = result.models;
-    setModels(discovered);
+    setModels(result.models);
     setLoadingModels(false);
-    if (result.ok && discovered.length > 0) {
+    if (result.ok && result.models.length > 0) {
       setSettings((s) => {
-        const ids = new Set(discovered.map((m) => m.id));
-        if (s.model && ids.has(s.model)) return s; // keep current pick
+        const ids = new Set(result.models.map((m) => m.id));
+        if (s.model && ids.has(s.model)) return s;
         const customFirst = s.customModels.find((c) => ids.has(c.id));
-        return { ...s, model: customFirst?.id ?? discovered[0].id };
+        return { ...s, model: customFirst?.id ?? result.models[0].id };
       });
     }
   }, [settings.provider.baseUrl]);
@@ -76,26 +135,24 @@ export default function App() {
     refreshModels();
   }, [refreshModels]);
 
-  // Auto-scroll to the newest message
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
-  // --- Sending -----------------------------------------------------------
-  const [notice, setNotice] = useState<string | null>(null);
+  const patchSession = (id: string, patch: Partial<ChatSession>) =>
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: Date.now() } : s)));
 
-  const send = async (text: string): Promise<boolean> => {
-    if (busy || !text.trim()) return false;
+  // --- Sending -----------------------------------------------------------
+  const send = async (rawText: string): Promise<boolean> => {
+    const text = rawText.trim();
+    if (busy || !text || !activeSession) return false;
     if (!settings.model) {
       setNotice("Pick a model first — tap the ✨ button up top so Talia knows who she is today ♡");
       return false;
     }
-    const userMsg: ChatMessage = {
-      id: makeId(),
-      role: "user",
-      content: text,
-      createdAt: Date.now(),
-    };
+
+    const sessionId = activeSession.id;
+    const userMsg: ChatMessage = { id: makeId(), role: "user", content: text, createdAt: Date.now() };
     const assistantId = makeId();
     const assistantMsg: ChatMessage = {
       id: assistantId,
@@ -105,22 +162,77 @@ export default function App() {
       createdAt: Date.now(),
     };
 
-    const history = [...messages, userMsg];
-    setMessages([...history, assistantMsg]);
-    setNotice(null);
+    // Title new chats from the first message
+    const isFirst = activeSession.messages.length === 0;
+    if (isFirst) {
+      patchSession(sessionId, {
+        title: text.length > 38 ? `${text.slice(0, 36)}…` : text,
+      });
+    }
+
     setBusy(true);
     stopFlag.current = false;
 
+    const currentMessages = [...activeSession.messages, userMsg];
+    patchSession(sessionId, { messages: [...currentMessages, assistantMsg] });
+
+    // Build system prompt: persona + date + memories + research
+    const systemParts: string[] = [settings.systemPrompt, `Today is ${new Date().toDateString()}.`];
+    let attachedSources: ChatMessage["sources"] | undefined;
+
+    try {
+      // 1) Memory recall (fast, local)
+      if (settings.autoRemember) {
+        const hits = await recallMemory(text, 5);
+        if (hits.length > 0) {
+          systemParts.push(
+            "Things you remember about the user (use naturally, don't list them back verbatim):\n" +
+              hits.map((h) => `- ${h.text}`).join("\n"),
+          );
+        }
+      }
+
+      // 2) Research mode (slower, web)
+      if (settings.ragEnabled) {
+        setResearchStatus("Searching the web…");
+        const r = await runResearch(text, 5);
+        if (r.ok && r.sources && r.sources.length > 0) {
+          systemParts.push(r.context || "");
+          attachedSources = r.sources;
+          setResearchStatus(null);
+        } else {
+          systemParts.push(
+            "Web research is unavailable right now — answer from your own knowledge and say you couldn't verify online.",
+          );
+          setResearchStatus(null);
+        }
+      }
+    } catch {
+      setResearchStatus(null);
+    }
+
     const payloadMessages = [
-      ...(settings.systemPrompt.trim()
-        ? [{ role: "system" as const, content: settings.systemPrompt }]
-        : []),
-      ...history.map((m) => ({ role: m.role, content: m.content })),
+      ...(systemParts.length > 0 ? [{ role: "system" as const, content: systemParts.join("\n\n") }] : []),
+      ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
     const controller = new AbortController();
     abortRef.current = controller;
     lastRequestId.current = assistantId;
+
+    let assistantAccumulator = "";
+    let sources = attachedSources;
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              updatedAt: Date.now(),
+              messages: s.messages.map((m) => (m.id === assistantId ? { ...m, sources } : m)),
+            }
+          : s,
+      ),
+    );
 
     try {
       await streamChat(
@@ -130,29 +242,48 @@ export default function App() {
         {
           onToken: (tok) => {
             if (stopFlag.current) return;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: m.content + tok } : m,
+            assistantAccumulator += tok;
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((m) =>
+                        m.id === assistantId ? { ...m, content: m.content + tok } : m,
+                      ),
+                    }
+                  : s,
               ),
             );
           },
           onDone: () => {
-            // Drop the assistant bubble if generation stopped before any text arrived
-            setMessages((prev) =>
-              prev.some((m) => m.id === assistantId && m.content.trim() === "")
-                ? prev.filter((m) => m.id !== assistantId)
-                : prev,
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((m) => (m.id === assistantId && m.content.trim() === "" ? null : m)).filter(Boolean) as ChatMessage[],
+                    }
+                  : s,
+              ),
             );
           },
           onError: (msg) => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
                   ? {
-                      ...m,
-                      content: `Oh no, I couldn't reach your model server 🥺 — ${msg}\n\nDouble-check that it's running, then try again. I'll be right here! 🌸`,
+                      ...s,
+                      messages: s.messages.map((m) =>
+                        m.id === assistantId
+                          ? {
+                              ...m,
+                              content: `Oh no, I couldn't reach your model server 🥺 — ${msg}\n\nDouble-check that it's running, then try again. I'll be right here! 🌸`,
+                            }
+                          : m,
+                      ),
                     }
-                  : m,
+                  : s,
               ),
             );
           },
@@ -160,9 +291,19 @@ export default function App() {
         controller.signal,
         assistantId,
       );
+
+      // Post-response housekeeping: auto-remember + TTS
+      const assistantText = assistantAccumulator.trim();
+      if (settings.autoRemember && assistantText) {
+        void rememberExchange(text, assistantText, sessionId);
+      }
+      if (settings.ttsEnabled && assistantText) {
+        void speakText(assistantText.slice(0, 1200));
+      }
     } finally {
       setBusy(false);
       abortRef.current = null;
+      setResearchStatus(null);
     }
     return true;
   };
@@ -180,16 +321,29 @@ export default function App() {
     setBusy(false);
   };
 
-  const lastRequestId = useRef<string | null>(null);
+  const newChat = () => {
+    stop();
+    const s = newSession();
+    setSessions((prev) => [...prev, s]);
+    setActiveId(s.id);
+  };
 
   const clearChat = () => {
+    if (!activeSession) return;
     stop();
-    setMessages([]);
+    patchSession(activeSession.id, { messages: [], title: "New chat" });
+  };
+
+  const deleteSession = (id: string) => {
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      return next.length > 0 ? next : [newSession()];
+    });
   };
 
   const handleExport = (format: "json" | "md") => {
-    if (messages.length === 0) return;
-    const content = format === "json" ? exportAsJson(messages) : exportAsMarkdown(messages);
+    if (!activeSession || activeSession.messages.length === 0) return;
+    const content = format === "json" ? exportAsJson(activeSession.messages) : exportAsMarkdown(activeSession.messages);
     downloadFile(
       `talia-chat-${timestampSlug()}.${format}`,
       content,
@@ -197,65 +351,115 @@ export default function App() {
     );
   };
 
-  // Merge discovered models with user presets for both the picker and quick switcher
+  const uploadChatToMemory = async () => {
+    if (!activeSession) return;
+    const msgs = activeSession.messages.filter((m) => m.role !== "system");
+    let saved = 0;
+    for (let i = 0; i + 1 < msgs.length; i += 2) {
+      if (msgs[i].role === "user" && msgs[i + 1].role === "assistant") {
+        const r = await rememberExchange(msgs[i].content, msgs[i + 1].content, activeSession.id);
+        saved += r.saved ?? 0;
+      }
+    }
+    setNotice(saved > 0 ? `Saved ~${saved} memories from this chat 🧠✨` : "This chat was already in my memory ♡");
+  };
+
+  const rememberOne = async (m: ChatMessage) => {
+    await rememberText(m.content.slice(0, 1000), activeSession?.id ?? null);
+    setNotice("Talia will remember that 🧠💗");
+  };
+
   const allModels = useMemo(() => {
     const list: DiscoveredModel[] = models.map((m) => ({ id: m.id }));
     for (const c of settings.customModels) {
-      if (!list.some((d) => d.id === c.id)) {
-        list.push({ id: c.id });
-      }
+      if (!list.some((d) => d.id === c.id)) list.push({ id: c.id });
     }
     return list;
   }, [models, settings.customModels]);
 
   return (
-    <div className="flex h-full flex-col">
-      <HeaderBar
-        online={online}
-        checking={checking}
-        model={settings.model}
-        onOpenModels={() => setShowModels(true)}
-        onOpenSettings={() => setShowSettings(true)}
-        onClear={clearChat}
-        onExport={handleExport}
-        busy={busy}
+    <div className="flex h-full">
+      <SessionSidebar
+        open={sidebarOpen}
+        sessions={sessions}
+        activeId={activeSession?.id ?? null}
+        onSelect={(id) => {
+          stop();
+          setActiveId(id);
+        }}
+        onNew={newChat}
+        onDelete={deleteSession}
+        onOpenMemory={() => setShowMemory(true)}
+        onOpenStudio={() => setShowStudio(true)}
       />
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-6">
-          {messages.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <AnimatePresence initial={false}>
-              {messages.map((m) => (
-                <MessageBubble
-                  key={m.id}
-                  message={m}
-                  isStreaming={busy && m.id === messages[messages.length - 1]?.id}
-                />
-              ))}
-            </AnimatePresence>
-          )}
-          <div ref={bottomRef} />
-        </div>
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <HeaderBar
+          online={online}
+          checking={checking}
+          model={settings.model}
+          ragActive={settings.ragEnabled}
+          onToggleSidebar={() => setSidebarOpen((o) => !o)}
+          onOpenModels={() => setShowModels(true)}
+          onOpenCatalog={() => setShowCatalog(true)}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenStudio={() => setShowStudio(true)}
+          onClear={clearChat}
+          onExport={handleExport}
+          busy={busy}
+        />
 
-      <Composer onSend={send} onStop={stop} busy={busy} />
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-6">
+            {messages.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <AnimatePresence initial={false}>
+                {messages.map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    message={m}
+                    isStreaming={busy && m.id === messages[messages.length - 1]?.id}
+                    onRemember={rememberOne}
+                  />
+                ))}
+              </AnimatePresence>
+            )}
+            <div ref={bottomRef} />
+          </div>
+        </main>
 
-      <AnimatePresence>
-        {notice && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2"
-          >
-            <div className="rounded-full border border-lavender-200 bg-white/95 px-5 py-2.5 text-xs font-bold text-cocoa-600 shadow-plushlg">
-              {notice}
-            </div>
-          </motion.div>
+        {researchStatus && (
+          <div className="mx-auto mb-1 flex max-w-3xl items-center gap-2 px-6">
+            <span className="typing-dot h-2 w-2 rounded-full bg-sky-400" />
+            <span className="text-xs font-bold text-sky-500">{researchStatus}</span>
+          </div>
         )}
-      </AnimatePresence>
+
+        <Composer
+          onSend={send}
+          onStop={stop}
+          busy={busy}
+          researchEnabled={settings.ragEnabled}
+          onToggleResearch={() => setSettings((s) => ({ ...s, ragEnabled: !s.ragEnabled }))}
+        />
+
+        <AnimatePresence>
+          {notice && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              onClick={() => setNotice(null)}
+              className="pointer-events-auto fixed bottom-24 left-1/2 z-40 -translate-x-1/2 cursor-pointer"
+            >
+              <div className="rounded-full border border-lavender-200 bg-white/95 px-5 py-2.5 text-xs font-bold text-cocoa-600 shadow-plushlg">
+                {notice}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       <ModelPickerModal
         open={showModels}
@@ -266,7 +470,12 @@ export default function App() {
         onRefresh={refreshModels}
         loading={loadingModels}
       />
-
+      <ModelCatalogModal
+        open={showCatalog}
+        onClose={() => setShowCatalog(false)}
+        baseUrl={settings.provider.baseUrl}
+        onPulled={refreshModels}
+      />
       <SettingsDrawer
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -275,9 +484,14 @@ export default function App() {
           setSettings(next);
           if (next.provider.baseUrl !== settings.provider.baseUrl) setChecking(true);
         }}
+        onOpenCatalog={() => {
+          setShowSettings(false);
+          setShowCatalog(true);
+        }}
       />
+      <MediaStudio open={showStudio} onClose={() => setShowStudio(false)} />
+      <MemoryPanel open={showMemory} onClose={() => setShowMemory(false)} onUpload={uploadChatToMemory} />
 
-      {/* Little mascot peeking in the corner */}
       <div className="pointer-events-none fixed bottom-1 right-2 opacity-40">
         <Mascot size={22} />
       </div>

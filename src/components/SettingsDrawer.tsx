@@ -1,21 +1,55 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { Drawer } from "./ui";
 import { Mascot } from "./Mascot";
 import { DEFAULT_SYSTEM_PROMPT } from "../lib/constants";
 import type { CustomModelPreset, Settings } from "../types";
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <button onClick={() => onChange(!checked)} className="flex w-full items-center gap-3 text-left">
+      <span
+        className={`relative h-5 w-9 shrink-0 rounded-full transition ${
+          checked ? "bg-blush-400" : "bg-cocoa-300/40"
+        }`}
+      >
+        <motion.span
+          layout
+          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow ${checked ? "right-0.5" : "left-0.5"}`}
+        />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[13px] font-bold text-cocoa-600">{label}</span>
+        <span className="block text-[11px] leading-snug text-cocoa-300">{hint}</span>
+      </span>
+    </button>
+  );
+}
 
 export function SettingsDrawer({
   open,
   onClose,
   settings,
   onChange,
+  onOpenCatalog,
 }: {
   open: boolean;
   onClose: () => void;
   settings: Settings;
   onChange: (next: Settings) => void;
+  onOpenCatalog: () => void;
 }) {
   const [cm, setCm] = useState<CustomModelPreset>({
     id: "",
@@ -30,11 +64,7 @@ export function SettingsDrawer({
   const addCustomModel = () => {
     const id = cm.id.trim();
     if (!id) return;
-    const next: CustomModelPreset = {
-      ...cm,
-      id,
-      displayName: cm.displayName.trim() || id,
-    };
+    const next: CustomModelPreset = { ...cm, id, displayName: cm.displayName.trim() || id };
     if (!settings.customModels.some((m) => m.id === id)) {
       onChange({ ...settings, customModels: [...settings.customModels, next] });
     }
@@ -42,33 +72,50 @@ export function SettingsDrawer({
   };
 
   return (
-    <Drawer
-      open={open}
-      onClose={onClose}
-      title="Talia's settings"
-      icon={<Mascot size={26} />}
-    >
+    <Drawer open={open} onClose={onClose} title="Talia's settings" icon={<Mascot size={26} />}>
       <div className="flex flex-col gap-6 text-sm">
         {/* Persona */}
         <section>
-          <h3 className="mb-1.5 flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-wide text-blush-500">
-            🌸 Talia&apos;s personality
+          <h3 className="mb-1.5 text-[13px] font-extrabold uppercase tracking-wide text-blush-500">
+            🌸 Talia's personality
           </h3>
-          <label className="mb-1 block text-xs font-semibold text-cocoa-400">
-            System prompt (who Talia is)
-          </label>
           <textarea
             rows={4}
             value={settings.systemPrompt}
             onChange={(e) => onChange({ ...settings, systemPrompt: e.target.value })}
-            className="w-full resize-y rounded-2xl border border-blush-200 bg-white/90 p-3 text-[13px] leading-relaxed text-cocoa-600 outline-none transition focus:border-lavender-300"
+            className="w-full resize-y rounded-2xl border border-blush-200 bg-white/90 p-3 text-[13px] leading-relaxed text-cocoa-600 outline-none focus:border-lavender-300"
           />
           <button
             onClick={() => onChange({ ...settings, systemPrompt: DEFAULT_SYSTEM_PROMPT })}
             className="mt-1.5 text-xs font-bold text-lavender-500 underline-offset-2 hover:underline"
           >
-            Reset to Talia&apos;s default personality
+            Reset to Talia's default personality
           </button>
+        </section>
+
+        {/* Superpowers */}
+        <section className="flex flex-col gap-3">
+          <h3 className="text-[13px] font-extrabold uppercase tracking-wide text-lavender-500">
+            ✨ Superpowers
+          </h3>
+          <Toggle
+            checked={settings.ragEnabled}
+            onChange={(v) => onChange({ ...settings, ragEnabled: v })}
+            label="🌐 Research mode (Perplexity-style)"
+            hint="Searches the live web & cites sources before answering. Slower, smarter."
+          />
+          <Toggle
+            checked={settings.autoRemember}
+            onChange={(v) => onChange({ ...settings, autoRemember: v })}
+            label="🧠 Remember across chats"
+            hint="Talia keeps the important bits in her long-term memory and recalls them in any chat."
+          />
+          <Toggle
+            checked={settings.ttsEnabled}
+            onChange={(v) => onChange({ ...settings, ttsEnabled: v })}
+            label="🔊 Speak replies aloud"
+            hint="Reads answers with your local TTS voice (Piper or compatible)."
+          />
         </section>
 
         {/* Provider */}
@@ -76,25 +123,26 @@ export function SettingsDrawer({
           <h3 className="mb-1.5 text-[13px] font-extrabold uppercase tracking-wide text-lavender-500">
             🔌 Local provider
           </h3>
-          <label className="mb-1 block text-xs font-semibold text-cocoa-400">
-            Base URL (Ollama, LM Studio, llama.cpp…)
-          </label>
           <input
             type="text"
             value={settings.provider.baseUrl}
             onChange={(e) => setProvider({ baseUrl: e.target.value })}
             className="w-full rounded-2xl border border-blush-200 bg-white/90 px-3 py-2 font-mono text-[13px] text-cocoa-600 outline-none focus:border-lavender-300"
           />
-          <label className="mb-1 mt-3 block text-xs font-semibold text-cocoa-400">
-            API key <span className="font-normal">(optional — for gated local servers)</span>
-          </label>
           <input
             type="password"
             value={settings.provider.apiKey ?? ""}
             onChange={(e) => setProvider({ apiKey: e.target.value || undefined })}
-            className="w-full rounded-2xl border border-blush-200 bg-white/90 px-3 py-2 font-mono text-[13px] text-cocoa-600 outline-none focus:border-lavender-300"
-            placeholder="leave empty for Ollama"
+            className="mt-2 w-full rounded-2xl border border-blush-200 bg-white/90 px-3 py-2 font-mono text-[13px] text-cocoa-600 outline-none focus:border-lavender-300"
+            placeholder="API key (optional)"
           />
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={onOpenCatalog}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-lavender-400 to-blush-400 py-2.5 text-xs font-extrabold text-white shadow-plush"
+          >
+            <Sparkles size={14} /> Browse model catalog & one-click pull
+          </motion.button>
         </section>
 
         {/* Generation */}
@@ -137,17 +185,10 @@ export function SettingsDrawer({
           <h3 className="mb-1.5 text-[13px] font-extrabold uppercase tracking-wide text-lavender-400">
             🧸 Custom model presets
           </h3>
-          <p className="mb-2 text-xs text-cocoa-400">
-            Saved presets appear in the model dropdown, even before Talia discovers them.
-          </p>
-
           {settings.customModels.length > 0 && (
             <ul className="mb-3 flex flex-col gap-1.5">
               {settings.customModels.map((m) => (
-                <li
-                  key={m.id}
-                  className="flex items-center justify-between rounded-2xl border border-lavender-100 bg-white px-3 py-2"
-                >
+                <li key={m.id} className="flex items-center justify-between rounded-2xl border border-lavender-100 bg-white px-3 py-2">
                   <div>
                     <div className="text-[13px] font-bold text-cocoa-600">{m.displayName}</div>
                     <div className="font-mono text-[11px] text-cocoa-400">
@@ -157,10 +198,7 @@ export function SettingsDrawer({
                   <motion.button
                     whileTap={{ scale: 0.85 }}
                     onClick={() =>
-                      onChange({
-                        ...settings,
-                        customModels: settings.customModels.filter((x) => x.id !== m.id),
-                      })
+                      onChange({ ...settings, customModels: settings.customModels.filter((x) => x.id !== m.id) })
                     }
                     className="rounded-full p-1.5 text-cocoa-300 transition hover:bg-rose-50 hover:text-rose-400"
                     aria-label={`Remove ${m.displayName}`}
@@ -171,7 +209,6 @@ export function SettingsDrawer({
               ))}
             </ul>
           )}
-
           <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-lavender-200 bg-lavender-50/40 p-3">
             <input
               type="text"

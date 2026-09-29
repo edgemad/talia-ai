@@ -1,12 +1,28 @@
 import express from "express";
 import cors from "cors";
 import http from "node:http";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { buildProviderRequest, validateProviderConfig } from "./provider.mjs";
 import { encodeSSE } from "./sse.mjs";
+import { api } from "./routes.mjs";
+import { flushNow } from "./store.mjs";
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+
+// v2 feature API (sessions, memory, research, media, catalog)
+app.use("/api", api);
+
+// Standalone mode: serve the built frontend from dist/ when present,
+// so `npm run server` alone is the whole app.
+const distDir = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+if (existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(join(distDir, "index.html")));
+}
 
 const state = {
   stopFlags: new Set(),
@@ -183,8 +199,16 @@ app.post("/api/chat", async (req, res) => {
 const server = http.createServer(app);
 server.keepAliveTimeout = 65_000;
 server.requestTimeout = 0; // allow long-running SSE streams
-process.on("SIGINT", () => server.close(() => process.exit(0)));
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
+async function shutdown(signal) {
+  console.log(`\n🌸 ${signal} — saving Talia's memories…`);
+  try {
+    await flushNow();
+  } finally {
+    server.close(() => process.exit(0));
+  }
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 const parsedPort = Number(process.env.PORT);
 const PORT = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 8787;
