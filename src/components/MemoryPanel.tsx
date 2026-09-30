@@ -11,6 +11,12 @@ import {
 } from "../lib/serverApi";
 import type { MemoryItem } from "../types";
 
+const inputStyle = {
+  background: "var(--surface-strong)",
+  borderColor: "var(--border)",
+  color: "var(--text)",
+} as const;
+
 export function MemoryPanel({
   open,
   onClose,
@@ -18,13 +24,11 @@ export function MemoryPanel({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Upload the current chat as memories. */
   onUpload?: () => void;
 }) {
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [query, setQuery] = useState("");
   const [newFact, setNewFact] = useState("");
-
 
   useEffect(() => {
     if (open) fetchMemory().then(setItems);
@@ -53,7 +57,7 @@ export function MemoryPanel({
       open={open}
       onClose={onClose}
       title="Talia's memory 🧠"
-      icon={<Brain size={19} className="text-lavender-400" />}
+      icon={<Brain size={19} className="text-accent-2" />}
     >
       <div className="flex gap-2">
         <input
@@ -61,11 +65,13 @@ export function MemoryPanel({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && search()}
           placeholder="Search what Talia remembers…"
-          className="flex-1 rounded-full border border-blush-200 bg-white px-4 py-2 text-sm outline-none focus:border-lavender-300"
+          className="flex-1 rounded-full border px-4 py-2 text-sm outline-none focus:border-accent"
+          style={inputStyle}
         />
         <button
           onClick={search}
-          className="rounded-full border border-lavender-200 bg-white px-4 text-xs font-bold text-cocoa-500 hover:bg-lavender-50"
+          className="glass-pill rounded-full px-4 text-xs font-bold transition hover:brightness-105"
+          style={{ color: "var(--text-soft)" }}
         >
           Recall
         </button>
@@ -77,12 +83,14 @@ export function MemoryPanel({
           onChange={(e) => setNewFact(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Teach Talia something new…"
-          className="flex-1 rounded-full border border-blush-200 bg-white px-4 py-2 text-sm outline-none focus:border-lavender-300"
+          className="flex-1 rounded-full border px-4 py-2 text-sm outline-none focus:border-accent"
+          style={inputStyle}
         />
         <motion.button
           whileTap={{ scale: 0.92 }}
           onClick={add}
-          className="rounded-full bg-gradient-to-r from-blush-400 to-lavender-400 px-4 py-2 text-white shadow-plush"
+          className="rounded-full px-4 py-2 text-white shadow-plush"
+          style={{ background: "var(--accent-grad)" }}
           aria-label="Remember this"
         >
           <Plus size={15} />
@@ -92,7 +100,8 @@ export function MemoryPanel({
       {onUpload && (
         <button
           onClick={onUpload}
-          className="mt-2 w-full rounded-2xl border border-dashed border-lavender-200 bg-lavender-50/50 py-2 text-xs font-bold text-lavender-500 transition hover:bg-lavender-50"
+          className="mt-2 w-full rounded-2xl border border-dashed py-2 text-xs font-bold text-accent-2 transition hover:brightness-105"
+          style={{ borderColor: "var(--accent-2)", background: "var(--surface)" }}
         >
           ⬆️ Upload this conversation to memory
         </button>
@@ -100,7 +109,7 @@ export function MemoryPanel({
 
       <div className="mt-3 flex max-h-80 flex-col gap-1.5 overflow-y-auto">
         {items.length === 0 && (
-          <p className="py-6 text-center text-xs font-semibold text-cocoa-300">
+          <p className="py-6 text-center text-xs font-semibold" style={{ color: "var(--text-faint)" }}>
             Talia's mind is a blank cozy slate 🌸 Chat with her — she'll remember the important bits.
           </p>
         )}
@@ -109,18 +118,20 @@ export function MemoryPanel({
             key={it.id}
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
-            className="group flex items-start gap-2 rounded-2xl border border-blush-100 bg-white px-3 py-2"
+            className="group flex items-start gap-2 rounded-2xl border px-3 py-2"
+            style={{ borderColor: "var(--border)", background: "var(--surface)" }}
           >
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] leading-snug text-cocoa-600">{it.text}</p>
-              <p className="mt-0.5 text-[10px] font-bold text-cocoa-300">
+              <p className="text-[13px] leading-snug" style={{ color: "var(--text)" }}>{it.text}</p>
+              <p className="mt-0.5 text-[10px] font-bold" style={{ color: "var(--text-faint)" }}>
                 {it.source} · {new Date(it.ts).toLocaleDateString()}
                 {it.count && it.count > 1 ? ` · ×${it.count}` : ""}
               </p>
             </div>
             <button
               onClick={() => remove(it.id)}
-              className="rounded-full p-1 text-cocoa-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-400 group-hover:opacity-100"
+              className="rounded-full p-1 opacity-0 transition hover:bg-rose-500/10 group-hover:opacity-100"
+              style={{ color: "var(--text-faint)" }}
               aria-label="Forget"
             >
               <Trash2 size={13} />
@@ -137,7 +148,8 @@ export function MemoryPanel({
               setItems([]);
             }
           }}
-          className="mt-2 text-[11px] font-bold text-rose-400 hover:underline"
+          className="mt-2 text-[11px] font-bold hover:underline"
+          style={{ color: "var(--warn)" }}
         >
           Forget everything…
         </button>

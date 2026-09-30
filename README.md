@@ -2,22 +2,52 @@
 
 **Your cozy little local AI workstation.** Chat, research the live web, generate
 images & video, speak aloud — all through local models, all on your machine.
+Liquid-glass UI, five switchable vibes, and a baby dinosaur who lives in the lagoon.
 No cloud. No accounts. No telemetry. MIT licensed.
 
 ![vibe](https://img.shields.io/badge/vibe-cozy%20%26%20adorable-ffb8c6)
 ![privacy](https://img.shields.io/badge/privacy-100%25%20local-b294ee)
+![offline](https://img.shields.io/badge/offline-ready-2dd4bf)
+
+## 🎨 Liquid-glass themes
+
+Hit the 🎨 in the header — every theme swaps the whole palette, glass tint, glow,
+and Talia's mascot:
+
+| Theme | Vibe | Mascot |
+|---|---|---|
+| 🌸 **Sakura** | the original blush & lavender | blob |
+| 🌊 **Ocean Glass** | crisp cool blues | blob |
+| 🦕 **Dino Lagoon** | teal water + animated waves lapping the footer | **baby dinosaur** |
+| 🍵 **Matcha** | calm green tea & sunlight | blob |
+| 🌙 **Midnight Glass** | true dark mode with violet glow | blob |
+
+Glass everywhere: frosted header, sidebar, bubbles, composer, and modals with a
+subtle sheen that sweeps across surfaces. Themes persist in localStorage.
 
 ## ✨ What Talia does
 
 | | |
 |---|---|
-| 💬 **Streaming chat** | Markdown, code blocks, bouncy pastel bubbles, stop/continue, export MD/JSON |
+| 💬 **Streaming chat** | Markdown, code blocks, liquid-glass bubbles, stop/continue, export MD/JSON |
 | 🗂️ **Multi-chat sessions** | Sidebar of conversations, auto-titled, stored on disk — survives restarts |
 | 🧠 **Memory across chats** | Talia keeps facts & snippets in a local vector-ish store and recalls them in *any* conversation. Hover any message → 🧠 to pin it |
 | 🌐 **Perplexity-style research** | Flip the 🌐 toggle: Talia searches the live web, reads the top pages, and answers with numbered citations |
 | 🐬 **Uncensored models, one click** | Built-in catalog (Dolphin family, vision models, coders) with streaming pull progress — no refusals, you're the adult in the room |
 | 🎨 **Image · 🗣️ Speech · 🎬 Video** | Media Studio talks to your local Stable Diffusion, Piper TTS, and ComfyUI stacks |
 | 📦 **Standalone mode** | `npm run server` alone serves the whole app at `localhost:8787` |
+
+## 📴 Offline & online
+
+Talia adapts to your connection instead of breaking:
+
+- **Chat, memory, sessions, export** — always work, even fully offline. The UI
+  shell is cached by a service worker, so `localhost:8787` loads with zero internet.
+- **Web research (🌐)** — pauses gracefully offline; Talia tells you and answers
+  from her own knowledge instead.
+- **Model pulls & catalog** — need internet once; after that you're self-sufficient.
+- The status pill shows both facts: internet up? model up? — e.g.
+  *"Offline — chats still work, web research paused"* vs *"Model offline — start Ollama"*.
 
 ## 🚀 Quick start
 

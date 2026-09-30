@@ -42,13 +42,8 @@ export function MediaStudio({
   ];
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Talia's Studio 🎨"
-      icon={<span className="text-xl">🪄</span>}
-    >
-      <div className="mb-3 flex gap-1.5 rounded-full bg-blush-50 p-1">
+    <Modal open={open} onClose={onClose} title="Talia's Studio 🎨" icon={<span className="text-xl">🪄</span>}>
+      <div className="mb-3 flex gap-1.5 rounded-full p-1" style={{ background: "var(--surface)" }}>
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -57,8 +52,9 @@ export function MediaStudio({
               setResult(null);
             }}
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-extrabold transition ${
-              tab === t.id ? "bg-white text-cocoa-700 shadow-plush" : "text-cocoa-400 hover:text-cocoa-600"
+              tab === t.id ? "glass-strong" : ""
             }`}
+            style={{ color: tab === t.id ? "var(--text)" : "var(--text-faint)" }}
           >
             {t.icon}
             {t.label}
@@ -77,21 +73,26 @@ export function MediaStudio({
               ? "Cherry blossoms drifting over a calm pond, dreamy…"
               : "Type something for Talia to say out loud…"
         }
-        className="w-full resize-none rounded-2xl border border-blush-200 bg-white/90 p-3 text-sm text-cocoa-600 outline-none focus:border-lavender-300"
+        className="w-full resize-none rounded-2xl border p-3 text-sm outline-none focus:border-accent"
+        style={{ background: "var(--surface-strong)", borderColor: "var(--border)", color: "var(--text)" }}
       />
 
       <motion.button
         whileTap={{ scale: 0.97 }}
         onClick={run}
         disabled={busy || !prompt.trim()}
-        className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush-400 to-lavender-400 py-2.5 text-sm font-extrabold text-white shadow-plush disabled:opacity-40"
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-extrabold text-white shadow-plush disabled:opacity-40"
+        style={{ background: "var(--accent-grad)" }}
       >
         {busy ? <Loader2 size={16} className="animate-spin" /> : "✨"}
         {busy ? "Creating…" : "Create"}
       </motion.button>
 
       {result && !result.ok && (
-        <p className="mt-3 rounded-2xl border border-rose-100 bg-rose-50 p-3 text-xs font-semibold text-rose-500">
+        <p
+          className="mt-3 rounded-2xl border p-3 text-xs font-semibold"
+          style={{ borderColor: "rgba(251,113,133,0.35)", background: "rgba(251,113,133,0.08)", color: "var(--warn)" }}
+        >
           {result.error}
         </p>
       )}
@@ -100,7 +101,7 @@ export function MediaStudio({
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-3 overflow-hidden rounded-2xl border border-blush-100 bg-white p-2 text-center"
+          className="glass-strong mt-3 overflow-hidden rounded-2xl p-2 text-center"
         >
           {result.kind === "image" && (
             <img src={result.dataUrl} alt="Generated" className="mx-auto max-h-72 rounded-xl" />
@@ -109,11 +110,13 @@ export function MediaStudio({
           {result.kind === "video" && (
             <video controls src={result.dataUrl} className="mx-auto max-h-72 rounded-xl" />
           )}
-          <p className="mt-1 text-[10px] font-bold text-cocoa-300">via {result.backend} · 100% local</p>
+          <p className="mt-1 text-[10px] font-bold" style={{ color: "var(--text-faint)" }}>
+            via {result.backend} · 100% local
+          </p>
         </motion.div>
       )}
 
-      <p className="mt-3 text-center text-[11px] leading-relaxed text-cocoa-300">
+      <p className="mt-3 text-center text-[11px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
         Images need Automatic1111/SD on <code className="font-mono">:7860</code>, speech needs Piper
         (<code className="font-mono">TALIA_TTS_URL</code>), video needs ComfyUI — all optional, all local. See README.
       </p>

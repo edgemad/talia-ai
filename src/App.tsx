@@ -9,6 +9,7 @@ import { ModelCatalogModal } from "./components/ModelCatalogModal";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { MediaStudio } from "./components/MediaStudio";
 import { MemoryPanel } from "./components/MemoryPanel";
+import { ThemePicker } from "./components/ThemePicker";
 import { EmptyState } from "./components/StatusPill";
 import { Mascot } from "./components/Mascot";
 import {
@@ -40,6 +41,8 @@ import {
   runResearch,
   speakText,
 } from "./lib/serverApi";
+import { applyTheme, loadTheme, saveTheme } from "./lib/themes";
+import { useOnline } from "./lib/useOnline";
 import type { ChatMessage, ChatSession, Settings } from "./types";
 
 function newSession(): ChatSession {
@@ -60,7 +63,6 @@ export default function App() {
     return existing[existing.length - 1]?.id ?? sessions[0]?.id ?? "active";
   });
   const [online, setOnline] = useState(false);
-  const [checking, setChecking] = useState(true);
   const [models, setModels] = useState<DiscoveredModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -72,6 +74,14 @@ export default function App() {
   const [showMemory, setShowMemory] = useState(false);
   const [researchStatus, setResearchStatus] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [themeId, setThemeId] = useState<string>(loadTheme);
+  const [showThemes, setShowThemes] = useState(false);
+  const netOnline = useOnline();
+
+  useEffect(() => {
+    applyTheme(themeId);
+    saveTheme(themeId);
+  }, [themeId]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeId) ?? sessions[sessions.length - 1],
@@ -104,8 +114,6 @@ export default function App() {
       setOnline(o);
     } catch {
       setOnline(false);
-    } finally {
-      setChecking(false);
     }
   }, [settings.provider.baseUrl]);
 
@@ -192,18 +200,24 @@ export default function App() {
         }
       }
 
-      // 2) Research mode (slower, web)
+      // 2) Research mode (slower, web) — gracefully skipped when offline
       if (settings.ragEnabled) {
-        setResearchStatus("Searching the web…");
-        const r = await runResearch(text, 5);
-        if (r.ok && r.sources && r.sources.length > 0) {
-          systemParts.push(r.context || "");
-          attachedSources = r.sources;
-          setResearchStatus(null);
-        } else {
+        if (!netOnline) {
+          setNotice("🌐 You're offline — answering from my own knowledge instead of the web ♡");
           systemParts.push(
-            "Web research is unavailable right now — answer from your own knowledge and say you couldn't verify online.",
+            "The user is currently OFFLINE. Web research is unavailable — answer from your own knowledge and mention you couldn't check the web this time.",
           );
+        } else {
+          setResearchStatus("Searching the web…");
+          const r = await runResearch(text, 5);
+          if (r.ok && r.sources && r.sources.length > 0) {
+            systemParts.push(r.context || "");
+            attachedSources = r.sources;
+          } else {
+            systemParts.push(
+              "Web research is unavailable right now — answer from your own knowledge and say you couldn't verify online.",
+            );
+          }
           setResearchStatus(null);
         }
       }
@@ -396,23 +410,35 @@ export default function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <HeaderBar
           online={online}
-          checking={checking}
+          netOnline={netOnline}
           model={settings.model}
           ragActive={settings.ragEnabled}
+          themeId={themeId}
           onToggleSidebar={() => setSidebarOpen((o) => !o)}
           onOpenModels={() => setShowModels(true)}
-          onOpenCatalog={() => setShowCatalog(true)}
           onOpenSettings={() => setShowSettings(true)}
           onOpenStudio={() => setShowStudio(true)}
+          onOpenThemes={() => setShowThemes(true)}
           onClear={clearChat}
           onExport={handleExport}
           busy={busy}
         />
 
+        {!netOnline && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            className="glass-pill mx-auto mt-2 flex w-fit items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-bold"
+            style={{ color: "var(--warn)" }}
+          >
+            📴 Offline mode — chatting & memory work, web research is paused
+          </motion.div>
+        )}
+
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-6">
             {messages.length === 0 ? (
-              <EmptyState />
+              <EmptyState theme={themeId} />
             ) : (
               <AnimatePresence initial={false}>
                 {messages.map((m) => (
@@ -420,6 +446,7 @@ export default function App() {
                     key={m.id}
                     message={m}
                     isStreaming={busy && m.id === messages[messages.length - 1]?.id}
+                    theme={themeId}
                     onRemember={rememberOne}
                   />
                 ))}
@@ -431,8 +458,8 @@ export default function App() {
 
         {researchStatus && (
           <div className="mx-auto mb-1 flex max-w-3xl items-center gap-2 px-6">
-            <span className="typing-dot h-2 w-2 rounded-full bg-sky-400" />
-            <span className="text-xs font-bold text-sky-500">{researchStatus}</span>
+            <span className="typing-dot h-2 w-2 rounded-full bg-info" />
+            <span className="text-xs font-bold text-info">{researchStatus}</span>
           </div>
         )}
 
@@ -453,7 +480,7 @@ export default function App() {
               onClick={() => setNotice(null)}
               className="pointer-events-auto fixed bottom-24 left-1/2 z-40 -translate-x-1/2 cursor-pointer"
             >
-              <div className="rounded-full border border-lavender-200 bg-white/95 px-5 py-2.5 text-xs font-bold text-cocoa-600 shadow-plushlg">
+              <div className="glass-strong rounded-full px-5 py-2.5 text-xs font-bold" style={{ color: "var(--text)", borderRadius: 9999 }}>
                 {notice}
               </div>
             </motion.div>
@@ -482,18 +509,38 @@ export default function App() {
         settings={settings}
         onChange={(next) => {
           setSettings(next);
-          if (next.provider.baseUrl !== settings.provider.baseUrl) setChecking(true);
+          if (next.provider.baseUrl !== settings.provider.baseUrl) pollHealth();
         }}
         onOpenCatalog={() => {
           setShowSettings(false);
           setShowCatalog(true);
         }}
+        onOpenThemes={() => {
+          setShowSettings(false);
+          setShowThemes(true);
+        }}
+        themeId={themeId}
       />
       <MediaStudio open={showStudio} onClose={() => setShowStudio(false)} />
       <MemoryPanel open={showMemory} onClose={() => setShowMemory(false)} onUpload={uploadChatToMemory} />
+      <ThemePicker
+        open={showThemes}
+        onClose={() => setShowThemes(false)}
+        current={themeId}
+        onPick={(id) => {
+          setThemeId(id);
+        }}
+      />
+
+      {/* Lagoon waves for the dino theme */}
+      <div className="waves-lagoon" aria-hidden>
+        <div className="wave w1" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 90'%3E%3Cpath d='M0 60 Q75 30 150 60 T300 60 T450 60 T600 60 T750 60 T900 60 T1050 60 T1200 60 L1200 90 L0 90 Z' fill='rgba(45,212,191,0.35)'/%3E%3C/svg%3E")` }} />
+        <div className="wave w2" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 90'%3E%3Cpath d='M0 60 Q75 30 150 60 T300 60 T450 60 T600 60 T750 60 T900 60 T1050 60 T1200 60 L1200 90 L0 90 Z' fill='rgba(56,189,248,0.30)'/%3E%3C/svg%3E")` }} />
+        <div className="wave w3" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 90'%3E%3Cpath d='M0 60 Q75 30 150 60 T300 60 T450 60 T600 60 T750 60 T900 60 T1050 60 T1200 60 L1200 90 L0 90 Z' fill='rgba(125,211,252,0.25)'/%3E%3C/svg%3E")` }} />
+      </div>
 
       <div className="pointer-events-none fixed bottom-1 right-2 opacity-40">
-        <Mascot size={22} />
+        <Mascot size={22} theme={themeId} />
       </div>
     </div>
   );

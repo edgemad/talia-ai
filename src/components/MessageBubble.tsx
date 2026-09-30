@@ -11,7 +11,7 @@ function TypingDots() {
   return (
     <span className="inline-flex items-center gap-1 px-1 py-2">
       {[0, 1, 2].map((i) => (
-        <span key={i} className="typing-dot h-2 w-2 rounded-full bg-blush-400" />
+        <span key={i} className="typing-dot h-2 w-2 rounded-full bg-accent" />
       ))}
     </span>
   );
@@ -20,10 +20,12 @@ function TypingDots() {
 export function MessageBubble({
   message,
   isStreaming,
+  theme = "sakura",
   onRemember,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
+  theme?: string;
   onRemember?: (m: ChatMessage) => void;
 }) {
   const isUser = message.role === "user";
@@ -60,16 +62,14 @@ export function MessageBubble({
     >
       {!isUser && (
         <div className="mt-1 shrink-0">
-          <Mascot size={38} thinking={isStreaming} />
+          <Mascot size={38} thinking={isStreaming} theme={theme} />
         </div>
       )}
 
       <div className={`flex max-w-[78%] flex-col sm:max-w-[72%] ${isUser ? "items-end" : "items-start"}`}>
         <div
-          className={`rounded-3xl px-4 py-2.5 text-[15px] shadow-plush ${
-            isUser
-              ? "rounded-br-lg bg-gradient-to-br from-blush-400 to-blush-500 text-white"
-              : "rounded-bl-lg border border-blush-100 bg-white text-cocoa-700"
+          className={`rounded-3xl px-4 py-2.5 text-[15px] ${
+            isUser ? "bubble-user rounded-br-lg shadow-plush" : "bubble-ai glass-sheen rounded-bl-lg shadow-plush"
           }`}
         >
           {isUser ? (
@@ -102,7 +102,7 @@ export function MessageBubble({
                 target="_blank"
                 rel="noreferrer"
                 title={s.title}
-                className="max-w-[220px] truncate rounded-full border border-lavender-200 bg-lavender-50 px-2.5 py-0.5 text-[10px] font-bold text-lavender-500 hover:bg-lavender-100"
+                className="glass-pill max-w-[220px] truncate rounded-full px-2.5 py-0.5 text-[10px] font-bold text-accent-2"
               >
                 [{s.n}] {s.title || s.url}
               </a>
@@ -116,24 +116,26 @@ export function MessageBubble({
               isUser ? "flex-row-reverse" : ""
             }`}
           >
-            <button onClick={copy} className="rounded-full p-1.5 text-cocoa-300 hover:bg-blush-50 hover:text-blush-500" title="Copy">
-              {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            <button onClick={copy} className="rounded-full p-1.5 hover:bg-white/40" style={{ color: "var(--text-faint)" }} title="Copy">
+              {copied ? <Check size={12} className="text-ok" /> : <Copy size={12} />}
             </button>
             {!isUser && (
               <>
                 <button
                   onClick={speak}
-                  className="rounded-full p-1.5 text-cocoa-300 hover:bg-lavender-50 hover:text-lavender-500"
+                  className="rounded-full p-1.5 hover:bg-white/40"
+                  style={{ color: "var(--text-faint)" }}
                   title="Speak with local TTS"
                 >
-                  <Volume2 size={12} className={speaking ? "animate-pulse text-lavender-400" : ""} />
+                  <Volume2 size={12} className={speaking ? "animate-pulse text-accent-2" : ""} />
                 </button>
                 <button
                   onClick={remember}
-                  className="rounded-full p-1.5 text-cocoa-300 hover:bg-lavender-50 hover:text-lavender-500"
+                  className="rounded-full p-1.5 hover:bg-white/40"
+                  style={{ color: "var(--text-faint)" }}
                   title="Remember this"
                 >
-                  {remembered ? <Check size={12} className="text-emerald-400" /> : <Brain size={12} />}
+                  {remembered ? <Check size={12} className="text-ok" /> : <Brain size={12} />}
                 </button>
               </>
             )}
@@ -143,7 +145,7 @@ export function MessageBubble({
         {isStreaming && message.content && (
           <div className="mt-1 flex items-center gap-1 pl-2">
             {[0, 1, 2].map((i) => (
-              <span key={i} className="typing-dot h-1.5 w-1.5 rounded-full bg-lavender-300" />
+              <span key={i} className="typing-dot h-1.5 w-1.5 rounded-full bg-accent-2" />
             ))}
           </div>
         )}

@@ -35,7 +35,8 @@ export function ModelPickerModal({
     >
       <button
         onClick={onRefresh}
-        className="mb-3 inline-flex items-center gap-2 rounded-full border border-lavender-200 bg-white px-4 py-1.5 text-xs font-bold text-cocoa-500 shadow-plush transition hover:bg-lavender-50"
+        className="glass-pill mb-3 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold transition hover:brightness-105"
+        style={{ color: "var(--text-soft)" }}
       >
         <motion.span
           animate={loading ? { rotate: 360 } : { rotate: 0 }}
@@ -47,11 +48,14 @@ export function ModelPickerModal({
       </button>
 
       {models.length === 0 && !loading && (
-        <div className="rounded-2xl border border-dashed border-blush-300 bg-blush-50/60 p-4 text-sm text-cocoa-500">
-          <p className="font-bold">No models found 🥺</p>
+        <div
+          className="rounded-2xl border border-dashed p-4 text-sm"
+          style={{ borderColor: "var(--accent)", background: "var(--surface)", color: "var(--text-soft)" }}
+        >
+          <p className="font-bold" style={{ color: "var(--text)" }}>No models found 🥺</p>
           <p className="mt-1 text-xs leading-relaxed">
             Make sure Ollama is running, then pull a model:
-            <code className="ml-1 rounded bg-white px-1.5 py-0.5 text-xs">ollama pull llama3.2</code>
+            <code className="ml-1 rounded px-1.5 py-0.5 text-xs" style={{ background: "var(--surface-strong)" }}>ollama pull llama3.2</code>
           </p>
         </div>
       )}
@@ -70,15 +74,17 @@ export function ModelPickerModal({
               onClose();
             }}
             className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition ${
-              m.id === current
-                ? "border-lavender-300 bg-lavender-50"
-                : "border-blush-100 bg-white hover:border-lavender-200"
+              m.id === current ? "" : "hover:brightness-105"
             }`}
+            style={{
+              background: m.id === current ? "var(--surface-strong)" : "var(--surface)",
+              borderColor: m.id === current ? "var(--accent)" : "var(--border)",
+            }}
           >
             <div>
-              <div className="text-sm font-bold text-cocoa-700">{m.id}</div>
+              <div className="text-sm font-bold" style={{ color: "var(--text)" }}>{m.id}</div>
               {m.id === current && (
-                <div className="text-[11px] font-semibold text-lavender-500">
+                <div className="text-[11px] font-semibold text-accent-2">
                   Currently chatting with this one ♡
                 </div>
               )}
