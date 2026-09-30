@@ -15,15 +15,15 @@ if (!js || !css) throw new Error("dist/assets missing js or css — run `npm run
 const jsCode = await readFile(new URL(`assets/${js}`, dist), "utf8");
 const cssCode = await readFile(new URL(`assets/${css}`, dist), "utf8");
 const mascot = await readFile(new URL("../public/mascot.svg", import.meta.url), "utf8");
-const dino = await readFile(new URL("../public/dino.svg", import.meta.url), "utf8");
+const dragon = await readFile(new URL("../public/dragon.svg", import.meta.url), "utf8");
 const mascotDataUrl = `data:image/svg+xml;base64,${Buffer.from(mascot).toString("base64")}`;
-const dinoDataUrl = `data:image/svg+xml;base64,${Buffer.from(dino).toString("base64")}`;
+const dragonDataUrl = `data:image/svg+xml;base64,${Buffer.from(dragon).toString("base64")}`;
 
 const out = html
   .replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/, () => `<script type="module">${jsCode}</script>`)
   .replace(/<link[^>]*rel="stylesheet"[^>]*>/, () => `<style>${cssCode}</style>`)
   .replaceAll("/mascot.svg", mascotDataUrl)
-  .replaceAll("/dino.svg", dinoDataUrl)
+  .replaceAll("/dragon.svg", dragonDataUrl)
   .replaceAll("navigator.serviceWorker.register", "(async()=>{})"); // static preview has no SW
 
 await writeFile(new URL("talia-preview.html", dist), out);

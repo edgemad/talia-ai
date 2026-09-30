@@ -2,11 +2,13 @@
  * Caches the built app assets so the UI loads with zero network.
  * API calls are never cached (they're local anyway); pulls/streaming pass through.
  */
-const CACHE = "talia-shell-v1";
+const CACHE = "talia-shell-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(["/", "/mascot.svg", "/dino.svg"])),
+    caches.open(CACHE).then((cache) =>
+      cache.addAll(["/", "/mascot.svg", "/dragon.svg", "/dino.svg"]),
+    ),
   );
   self.skipWaiting();
 });

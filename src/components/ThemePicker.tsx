@@ -55,15 +55,15 @@ export function ThemePicker({
                   />
                 ))}
               </div>
-              {t.id === "dino" && (
-                <img src="/dino.svg" alt="" className="absolute -bottom-2 -right-1 w-12 opacity-90" />
+              {t.id === "dragon" && (
+                <img src="/dragon.svg" alt="" className="absolute -bottom-2 -right-1 w-12 opacity-90" />
               )}
             </motion.button>
           );
         })}
       </div>
       <p className="mt-3 text-center text-[11px] font-semibold" style={{ color: "var(--text-faint)" }}>
-        Themes swap the mascot too — the dino lagoon brings a splashy baby dinosaur 🦕💦
+        Themes swap the mascot too — the Dragon Lagoon brings a soaring baby dragon 🐉☁️
       </p>
     </Modal>
   );

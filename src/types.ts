@@ -3,6 +3,8 @@ export interface ProviderConfig {
   apiKey?: string;
   temperature: number;
   maxTokens?: number;
+  /** Which preset (free/local/cloud) this provider came from, for the UI. */
+  providerId?: string;
 }
 
 export interface CustomModelPreset {
@@ -57,6 +59,16 @@ export interface ChatSession {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  /** Who Talia is in this chat — defaults to her usual self when absent. */
+  persona?: Persona;
+}
+
+export interface Persona {
+  kind: "talia" | "bot";
+  /** For kind === "bot": the bot id (builtin-* or a user bot id). */
+  id?: string;
+  name?: string;
+  emoji?: string;
 }
 
 export interface MemoryItem {

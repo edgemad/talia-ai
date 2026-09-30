@@ -1,4 +1,4 @@
-// v2 feature routes: sessions, memory, research, media, model catalog.
+// v2 feature routes: sessions, memory, research, media, model catalog, bots & skills.
 import { Router } from "express";
 import {
   rememberFact,
@@ -11,8 +11,134 @@ import {
 import { research, extractiveAnswer } from "./research.mjs";
 import { generateImage, generateVideo, synthesizeSpeech, mediaHealth } from "./media.mjs";
 import { readCollection, writeCollection } from "./store.mjs";
+import {
+  BUILTIN_BOTS,
+  BUILTIN_SKILLS,
+  getSkill,
+  listUserBots,
+  saveBot,
+  deleteBot,
+} from "./bots.mjs";
+import { buildProviderRequest, validateProviderConfig } from "./provider.mjs";
 
 export const api = Router();
+
+// ---------- Bots ----------------------------------------------------------
+api.get("/bots", async (_req, res) => {
+  const userBots = await listUserBots();
+  res.json({ ok: true, bots: [...BUILTIN_BOTS, ...userBots] });
+});
+
+api.post("/bots", async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  if (!name) return res.status(400).json({ ok: false, error: "name required" });
+  if (!String(req.body?.systemPrompt || "").trim()) {
+    return res.status(400).json({ ok: false, error: "systemPrompt required" });
+  }
+  const bot = await saveBot(req.body);
+  res.json({ ok: true, bot });
+});
+
+api.delete("/bots/:id", async (req, res) => {
+  if (String(req.params.id).startsWith("builtin-")) {
+    return res.status(400).json({ ok: false, error: "built-in bots can't be deleted" });
+  }
+  res.json({ ok: await deleteBot(req.params.id) });
+});
+
+// ---------- Skills ----------------------------------------------------------
+// Public metadata only (build functions stay server-side).
+api.get("/skills", (_req, res) => {
+  res.json({
+    ok: true,
+    skills: BUILTIN_SKILLS.map(({ build, ...meta }) => meta),
+  });
+});
+
+// Run a skill: streams the model's answer as normalized SSE (same token
+// events as /api/chat, so the client can reuse one parser).
+api.post("/skills/:id/run", async (req, res) => {
+  const skill = getSkill(String(req.params.id || ""));
+  if (!skill) return res.status(404).json({ ok: false, error: "unknown skill" });
+  const { provider, model, text, context } = req.body || {};
+  if (!validateProviderConfig(provider)) {
+    return res.status(400).json({ ok: false, error: "Invalid provider configuration." });
+  }
+  if (!model) return res.status(400).json({ ok: false, error: "model required" });
+
+  const prompt = skill.build({ text: String(text || ""), context: String(context || "") });
+  const messages = [
+    ...(prompt.system ? [{ role: "system", content: prompt.system }] : []),
+    { role: "user", content: prompt.user || "(empty)" },
+  ];
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  try {
+    const upstream = await fetch(buildProviderRequest(provider, messages, model));
+    if (!upstream.ok || !upstream.body) {
+      const t = await upstream.text().catch(() => "");
+      res.write(`event: error\ndata: ${JSON.stringify({ error: `Provider responded ${upstream.status}: ${t.slice(0, 300)}` })}\n\n`);
+      return res.end();
+    }
+    const reader = upstream.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let closed = false;
+    res.on("close", () => {
+      closed = true;
+      try { reader.cancel(); } catch { /* ignore */ }
+    });
+    while (!closed) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (payload === "[DONE]") {
+          res.write("data: [DONE]\n\n");
+          return res.end();
+        }
+        try {
+          const evt = JSON.parse(payload);
+          const token = evt?.choices?.[0]?.delta?.content ?? "";
+          if (token) res.write(`data: ${JSON.stringify({ type: "token", token })}\n\n`);
+        } catch { /* skip malformed */ }
+      }
+    }
+    res.end();
+  } catch (err) {
+    res.write(`event: error\ndata: ${JSON.stringify({ error: `Could not reach provider: ${err.message}` })}\n\n`);
+    res.end();
+  }
+});
+
+// ---------- Provider presets (free/local first, then cloud APIs) ------------
+const PROVIDER_PRESETS = [
+  { id: "ollama", name: "Ollama (local & free)", baseUrl: "http://localhost:11434", needsKey: false, hint: "100% free & offline. Start Ollama, then pull a model from the catalog." },
+  { id: "lmstudio", name: "LM Studio (local & free)", baseUrl: "http://localhost:1234/v1", needsKey: false, hint: "Free local models with a GUI. Start the LM Studio server." },
+  { id: "jan", name: "Jan (local & free)", baseUrl: "http://localhost:1337/v1", needsKey: false, hint: "Free, open-source ChatGPT alternative that runs locally." },
+  { id: "llamacpp", name: "llama.cpp server (free)", baseUrl: "http://localhost:8080/v1", needsKey: false, hint: "The reference llama.cpp HTTP server." },
+  { id: "groq", name: "Groq (free tier, very fast)", baseUrl: "https://api.groq.com/openai/v1", needsKey: true, hint: "Generous free tier, blazing speed. Key: console.groq.com" },
+  { id: "openrouter-free", name: "OpenRouter (free models)", baseUrl: "https://openrouter.ai/api/v1", needsKey: true, hint: "Free models available (:free). Key: openrouter.ai/keys" },
+  { id: "gemini", name: "Google Gemini (free tier)", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", needsKey: true, hint: "Free tier via AI Studio. Key: aistudio.google.com" },
+  { id: "mistral", name: "Mistral (free tier)", baseUrl: "https://api.mistral.ai/v1", needsKey: true, hint: "Free experiment tier. Key: console.mistral.ai" },
+  { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", needsKey: true, hint: "Pay-as-you-go. Key: platform.openai.com" },
+  { id: "anthropic", name: "Anthropic Claude", baseUrl: "https://api.anthropic.com/v1", needsKey: true, hint: "Set ANTHROPIC_BASE_URL-compatible proxies here if needed." },
+  { id: "custom", name: "Custom / other", baseUrl: "", needsKey: false, hint: "Any OpenAI-compatible endpoint." },
+];
+
+api.get("/providers", (_req, res) => {
+  res.json({ ok: true, providers: PROVIDER_PRESETS });
+});
 
 // ---------- Sessions (server-side, cross-chat persistence) ---------------
 api.get("/sessions", async (_req, res) => {

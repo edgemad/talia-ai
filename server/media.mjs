@@ -35,22 +35,37 @@ async function j(url, opts = {}, timeoutMs = 120000) {
 }
 
 // ---------- Images -------------------------------------------------------
-export async function generateImage({ prompt, negative, steps, cfg, width, height }, baseUrl = DEFAULTS.image) {
+export async function generateImage(
+  { prompt, negative, steps, cfg, width, height, hires },
+  baseUrl = DEFAULTS.image,
+) {
   const base = baseUrl.replace(/\/+$/, "");
   // Try Automatic1111 first, fall back to OpenAI-style endpoint
   try {
+    const payload = {
+      prompt,
+      negative_prompt: negative || "lowres, blurry, watermark, jpeg artifacts, bad anatomy",
+      steps: Math.min(80, Math.max(8, Number(steps) || 32)),
+      cfg_scale: Math.min(14, Math.max(1, Number(cfg) || 7)),
+      width: Math.min(1536, Math.max(256, Number(width) || 768)),
+      height: Math.min(1536, Math.max(256, Number(height) || 768)),
+      sampler_name: "DPM++ 2M Karras",
+      batch_size: 1,
+      n_iter: 1,
+    };
+    if (hires) {
+      // Hi-res fix: denoise at low res, then upscale+redetail — much crisper
+      // edges and faces at 1024px+ than raw 1024px generation.
+      payload.enable_hr = true;
+      payload.hr_scale = 1.5;
+      payload.hr_upscaler = "Latent";
+      payload.hr_second_pass_steps = Math.max(10, Math.round(payload.steps * 0.6));
+      payload.denoising_strength = 0.45;
+    }
     const body = await j(`${base}/sdapi/v1/txt2img`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        negative_prompt: negative || "",
-        steps: steps || 26,
-        cfg_scale: cfg || 6.5,
-        width: width || 640,
-        height: height || 640,
-        sampler_name: "DPM++ 2M Karras",
-      }),
+      body: JSON.stringify(payload),
     });
     if (body?.images?.[0]) {
       const b64 = body.images[0];
@@ -66,7 +81,7 @@ export async function generateImage({ prompt, negative, steps, cfg, width, heigh
     const body = await j(`${base}/v1/images/generations`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, n: 1, size: `${width || 640}x${height || 640}` }),
+      body: JSON.stringify({ prompt, n: 1, size: `${width || 768}x${height || 768}` }),
     });
     const item = body?.data?.[0];
     if (item?.b64_json) {
@@ -83,12 +98,13 @@ export async function generateImage({ prompt, negative, steps, cfg, width, heigh
 }
 
 // ---------- Speech (TTS) --------------------------------------------------
-export async function synthesizeSpeech({ text, voice }, baseUrl = DEFAULTS.tts) {
-  if (!baseUrl) {
+export async function synthesizeSpeech({ text, voice, ttsUrl }, baseUrl = DEFAULTS.tts) {
+  const target = ttsUrl || baseUrl;
+  if (!target) {
     return { ok: false, error: "No TTS server configured. Run Piper (see README) or set TALIA_TTS_URL." };
   }
   try {
-    const r = await fetch(`${baseUrl.replace(/\/+$/, "")}`, {
+    const r = await fetch(`${target.replace(/\/+$/, "")}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice: voice || undefined }),
@@ -98,7 +114,7 @@ export async function synthesizeSpeech({ text, voice }, baseUrl = DEFAULTS.tts) 
     const mime = r.headers.get("content-type")?.includes("html") ? "audio/wav" : r.headers.get("content-type") || "audio/wav";
     return { ok: true, kind: "audio", mime, dataUrl: `data:${mime};base64,${buf.toString("base64")}`, backend: "piper-compatible" };
   } catch (err) {
-    return { ok: false, error: `TTS server unreachable at ${baseUrl} (${String(err).slice(0, 120)})` };
+    return { ok: false, error: `TTS server unreachable at ${target} (${String(err).slice(0, 120)})` };
   }
 }
 
@@ -114,17 +130,22 @@ const VIDEO_PROMPT_TEMPLATE = {
   "10": { class_type: "SaveVideo", inputs: {} },
 };
 
-export async function generateVideo({ prompt, negative, seconds = 3, width = 512, height = 512 }, baseUrl = DEFAULTS.comfy) {
+export async function generateVideo(
+  { prompt, negative, seconds = 3, width = 512, height = 512, fps = 12 },
+  baseUrl = DEFAULTS.comfy,
+) {
   if (!baseUrl) {
     return { ok: false, error: "No ComfyUI URL configured. Start ComfyUI (see README) or set TALIA_COMFY_URL." };
   }
   const base = baseUrl.replace(/\/+$/, "");
+  const safeFps = Math.min(24, Math.max(6, Math.round(Number(fps) || 12)));
   const p = structuredClone(VIDEO_PROMPT_TEMPLATE);
   p["6"].inputs.text = prompt;
-  p["7"].inputs.text = negative || "blurry, low quality";
-  p["5"].inputs.length = Math.min(120, Math.max(8, Math.round(seconds * 12)));
-  p["5"].inputs.width = width;
-  p["5"].inputs.height = height;
+  p["7"].inputs.text = negative || "blurry, low quality, flickering";
+  p["9"].inputs.fps = safeFps;
+  p["5"].inputs.length = Math.min(192, Math.max(6, Math.round((Number(seconds) || 3) * safeFps)));
+  p["5"].inputs.width = Math.min(768, Math.max(256, Number(width) || 512));
+  p["5"].inputs.height = Math.min(768, Math.max(256, Number(height) || 512));
   p["3"].inputs.seed = Math.floor(Math.random() * 1e9);
   // Wire edges
   p["6"].inputs.clip = ["4", 1];

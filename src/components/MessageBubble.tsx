@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { Brain, Check, Copy, Volume2 } from "lucide-react";
+import { Brain, Check, Copy, RefreshCw, Volume2 } from "lucide-react";
 import type { ChatMessage } from "../types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -22,11 +22,13 @@ export function MessageBubble({
   isStreaming,
   theme = "sakura",
   onRemember,
+  onRegenerate,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
   theme?: string;
   onRemember?: (m: ChatMessage) => void;
+  onRegenerate?: (m: ChatMessage) => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -137,6 +139,16 @@ export function MessageBubble({
                 >
                   {remembered ? <Check size={12} className="text-ok" /> : <Brain size={12} />}
                 </button>
+                {onRegenerate && (
+                  <button
+                    onClick={() => onRegenerate(message)}
+                    className="rounded-full p-1.5 hover:bg-white/40"
+                    style={{ color: "var(--text-faint)" }}
+                    title="Regenerate this answer"
+                  >
+                    <RefreshCw size={12} />
+                  </button>
+                )}
               </>
             )}
           </div>

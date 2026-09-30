@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { ExternalLink, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Drawer } from "./ui";
 import { Mascot } from "./Mascot";
 import { DEFAULT_SYSTEM_PROMPT } from "../lib/constants";
+import { PROVIDER_PRESETS, guessPreset, presetById } from "../lib/providers";
 import type { CustomModelPreset, Settings } from "../types";
 
 function Toggle({
@@ -109,7 +110,7 @@ export function SettingsDrawer({
                 Liquid glass themes
               </span>
               <span className="block text-[11px]" style={{ color: "var(--text-faint)" }}>
-                Sakura · Ocean · Dino Lagoon 🦕 · Matcha · Midnight
+                Sakura · Ocean · Dragon Lagoon 🐉 · Matcha · Midnight
               </span>
             </span>
             <span className="text-lg">🎨</span>
@@ -157,35 +158,97 @@ export function SettingsDrawer({
           />
         </section>
 
-        {/* Provider */}
+        {/* Providers — free & local first, cloud APIs optional */}
         <section>
-          <SectionTitle color="var(--accent-2)">🔌 Local provider</SectionTitle>
-          <input
-            type="text"
-            value={settings.provider.baseUrl}
-            onChange={(e) => setProvider({ baseUrl: e.target.value })}
-            className="w-full rounded-2xl border px-3 py-2 font-mono text-[13px] outline-none focus:border-accent"
-            style={inputStyle}
-          />
-          <input
-            type="password"
-            value={settings.provider.apiKey ?? ""}
-            onChange={(e) => setProvider({ apiKey: e.target.value || undefined })}
-            className="mt-2 w-full rounded-2xl border px-3 py-2 font-mono text-[13px] outline-none focus:border-accent"
-            style={inputStyle}
-            placeholder="API key (optional)"
-          />
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={onOpenCatalog}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-xs font-extrabold text-white shadow-plush"
-            style={{ background: "var(--accent-grad)" }}
-          >
-            <Sparkles size={14} /> Browse model catalog & one-click pull
-          </motion.button>
-          <p className="mt-2 text-[11px] leading-snug" style={{ color: "var(--text-faint)" }}>
-            Pulling models needs internet; chatting works offline once they're downloaded.
-          </p>
+          <SectionTitle color="var(--accent-2)">🔌 Providers — free & local first</SectionTitle>
+          <div className="grid grid-cols-2 gap-1.5">
+            {PROVIDER_PRESETS.map((p) => {
+              const active =
+                settings.provider.providerId === p.id ||
+                (!settings.provider.providerId && guessPreset(settings.provider.baseUrl)?.id === p.id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setProvider({ baseUrl: p.baseUrl, providerId: p.id })}
+                  className={`relative rounded-2xl border px-2.5 py-2 text-left transition hover:brightness-105 ${
+                    active ? "glass-strong" : "glass-pill"
+                  }`}
+                  style={{ borderColor: active ? "var(--accent)" : "var(--border)" }}
+                  title={p.hint}
+                >
+                  <span className="flex items-center gap-1.5 text-[12px] font-extrabold" style={{ color: "var(--text)" }}>
+                    <span>{p.emoji}</span>
+                    <span className="truncate">{p.name}</span>
+                  </span>
+                  {p.free && (
+                    <span
+                      className="absolute -top-1.5 right-1.5 rounded-full px-1.5 py-0.5 text-[8px] font-extrabold uppercase"
+                      style={{ background: "var(--accent)", color: "#fff" }}
+                    >
+                      free
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {(() => {
+            const preset = presetById(settings.provider.providerId) ?? guessPreset(settings.provider.baseUrl);
+            const isOllama = !preset || preset.id === "ollama";
+            return (
+              <>
+                {preset && (
+                  <p className="mt-2 rounded-2xl border p-2.5 text-[11px] leading-snug" style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text-soft)" }}>
+                    {preset.hint}
+                  </p>
+                )}
+                {preset?.needsKey && preset.keyUrl && (
+                  <a
+                    href={preset.keyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-accent-2 hover:underline"
+                  >
+                    <ExternalLink size={11} /> Get a key ({preset.free ? "free tier" : "paid"}) — {preset.name}
+                  </a>
+                )}
+                {!preset?.needsKey && (
+                  <input
+                    type="text"
+                    value={settings.provider.baseUrl}
+                    onChange={(e) => setProvider({ baseUrl: e.target.value, providerId: undefined })}
+                    className="mt-2 w-full rounded-2xl border px-3 py-2 font-mono text-[12px] outline-none focus:border-accent"
+                    style={inputStyle}
+                    placeholder="http://localhost:11434"
+                  />
+                )}
+                <input
+                  type="password"
+                  value={settings.provider.apiKey ?? ""}
+                  onChange={(e) => setProvider({ apiKey: e.target.value || undefined })}
+                  className="mt-2 w-full rounded-2xl border px-3 py-2 font-mono text-[13px] outline-none focus:border-accent"
+                  style={inputStyle}
+                  placeholder="API key (optional)"
+                />
+                {isOllama && (
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    onClick={onOpenCatalog}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-xs font-extrabold text-white shadow-plush"
+                    style={{ background: "var(--accent-grad)" }}
+                  >
+                    <Sparkles size={14} /> Browse model catalog & one-click pull
+                  </motion.button>
+                )}
+                <p className="mt-2 text-[11px] leading-snug" style={{ color: "var(--text-faint)" }}>
+                  {isOllama
+                    ? "Pulling models needs internet; chatting works offline once they're downloaded."
+                    : "Using a cloud API — your key stays in local storage and is sent only to this provider."}
+                </p>
+              </>
+            );
+          })()}
         </section>
 
         {/* Generation */}

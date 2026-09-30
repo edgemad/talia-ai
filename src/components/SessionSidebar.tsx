@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Plus, Trash2, Brain, Wand2 } from "lucide-react";
+import { Plus, Trash2, Brain, Wand2, Bot } from "lucide-react";
 import type { ChatSession } from "../types";
 
 export function SessionSidebar({
@@ -11,6 +11,7 @@ export function SessionSidebar({
   onDelete,
   onOpenMemory,
   onOpenStudio,
+  onOpenBots,
 }: {
   open: boolean;
   sessions: ChatSession[];
@@ -20,6 +21,7 @@ export function SessionSidebar({
   onDelete: (id: string) => void;
   onOpenMemory: () => void;
   onOpenStudio: () => void;
+  onOpenBots: () => void;
 }) {
   return (
     <motion.aside
@@ -38,20 +40,27 @@ export function SessionSidebar({
         >
           <Plus size={16} /> New chat
         </motion.button>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <button
             onClick={onOpenMemory}
-            className="glass-pill flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition hover:brightness-105"
+            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
             style={{ color: "var(--text-soft)" }}
           >
-            <Brain size={13} className="text-accent-2" /> Memory
+            <Brain size={12} className="text-accent-2" /> Memory
+          </button>
+          <button
+            onClick={onOpenBots}
+            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
+            style={{ color: "var(--text-soft)" }}
+          >
+            <Bot size={12} className="text-accent" /> Bots
           </button>
           <button
             onClick={onOpenStudio}
-            className="glass-pill flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition hover:brightness-105"
+            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
             style={{ color: "var(--text-soft)" }}
           >
-            <Wand2 size={13} className="text-accent" /> Studio
+            <Wand2 size={12} className="text-accent" /> Studio
           </button>
         </div>
       </div>

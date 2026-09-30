@@ -102,7 +102,12 @@ export interface MediaResult {
 export const generateImage = (body: Record<string, unknown>) =>
   postJson<MediaResult>("/api/media/image", body);
 
-export const speakText = (text: string) => postJson<MediaResult>("/api/media/tts", { text });
+export function speakText(
+  textOrOpts: string | { text: string; voice?: string; ttsUrl?: string },
+) {
+  const body = typeof textOrOpts === "string" ? { text: textOrOpts } : textOrOpts;
+  return postJson<MediaResult>("/api/media/tts", body);
+}
 
 export const generateVideo = (body: Record<string, unknown>) =>
   postJson<MediaResult>("/api/media/video", body);

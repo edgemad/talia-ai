@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
 import blobUrl from "/mascot.svg";
-import dinoUrl from "/dino.svg";
+import dragonUrl from "/dragon.svg";
 
-export type MascotKind = "blob" | "dino" | "cat";
+export type MascotKind = "blob" | "dragon" | "cat";
 
 /** Which mascot each theme shows. */
 export const THEME_MASCOT: Record<string, MascotKind> = {
@@ -10,12 +10,13 @@ export const THEME_MASCOT: Record<string, MascotKind> = {
   ocean: "blob",
   matcha: "blob",
   midnight: "blob",
-  dino: "dino",
+  dragon: "dragon",
+  dino: "dragon", // legacy theme id
 };
 
 const URLS: Record<MascotKind, string> = {
   blob: blobUrl,
-  dino: dinoUrl,
+  dragon: dragonUrl,
   cat: "",
 };
 
@@ -35,7 +36,7 @@ export function Mascot({
 
   return (
     <motion.div
-      className={`inline-block select-none ${theme === "dino" ? "dino-bob" : ""} ${className}`}
+      className={`inline-block select-none ${theme === "dragon" || theme === "dino" ? "dragon-bob" : ""} ${className}`}
       animate={thinking ? { y: [0, -4, 0] } : { y: 0 }}
       transition={
         thinking ? { repeat: Infinity, duration: 1.1, ease: "easeInOut" } : { duration: 0.2 }

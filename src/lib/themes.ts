@@ -22,11 +22,11 @@ export const THEMES: ThemeDef[] = [
     swatch: ["#7DD3FC", "#38BDF8", "#818CF8"],
   },
   {
-    id: "dino",
-    name: "Dino Lagoon",
-    emoji: "🦕",
-    blurb: "Baby dino splashing in teal water.",
-    swatch: ["#5EEAD4", "#2DD4BF", "#38BDF8"],
+    id: "dragon",
+    name: "Dragon Lagoon",
+    emoji: "🐉",
+    blurb: "Baby dragon soaring on mint clouds.",
+    swatch: ["#86EFAC", "#34D399", "#FBBF24"],
   },
   {
     id: "matcha",
@@ -50,7 +50,9 @@ const THEME_KEY = "talia-ai:theme";
 export function loadTheme(): string {
   try {
     const t = localStorage.getItem(THEME_KEY);
-    return THEMES.some((x) => x.id === t) ? (t as string) : DEFAULT_THEME;
+    // legacy name: the dino grew up into a dragon
+    const id = t === "dino" ? "dragon" : t;
+    return THEMES.some((x) => x.id === id) ? (id as string) : DEFAULT_THEME;
   } catch {
     return DEFAULT_THEME;
   }

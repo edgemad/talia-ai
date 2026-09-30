@@ -2,8 +2,8 @@
 
 **Your cozy little local AI workstation.** Chat, research the live web, generate
 images & video, speak aloud — all through local models, all on your machine.
-Liquid-glass UI, five switchable vibes, and a baby dinosaur who lives in the lagoon.
-No cloud. No accounts. No telemetry. MIT licensed.
+Liquid-glass UI, five switchable vibes, and a baby dragon who soars the lagoon skies.
+No cloud required. No accounts. No telemetry. MIT licensed.
 
 ![vibe](https://img.shields.io/badge/vibe-cozy%20%26%20adorable-ffb8c6)
 ![privacy](https://img.shields.io/badge/privacy-100%25%20local-b294ee)
@@ -18,7 +18,7 @@ and Talia's mascot:
 |---|---|---|
 | 🌸 **Sakura** | the original blush & lavender | blob |
 | 🌊 **Ocean Glass** | crisp cool blues | blob |
-| 🦕 **Dino Lagoon** | teal water + animated waves lapping the footer | **baby dinosaur** |
+| 🐉 **Dragon Lagoon** | mint skies + golden sun; animated waves lapping the footer | **baby dragon** |
 | 🍵 **Matcha** | calm green tea & sunlight | blob |
 | 🌙 **Midnight Glass** | true dark mode with violet glow | blob |
 
@@ -29,7 +29,9 @@ subtle sheen that sweeps across surfaces. Themes persist in localStorage.
 
 | | |
 |---|---|
-| 💬 **Streaming chat** | Markdown, code blocks, liquid-glass bubbles, stop/continue, export MD/JSON |
+| 💬 **Streaming chat** | Markdown, code blocks, liquid-glass bubbles, stop/continue, regenerate, export MD/JSON |
+| 🤖 **Bots & Skills** | Six built-in specialist bots (coder, writer, analyst, tutor, brainstormer, researcher) + create your own; one-tap skills: summarize, review code, translate, explain, action items, draft email |
+| 🔌 **Any provider, free first** | Ollama/LM Studio/Jan/llama.cpp locally — plus free-tier cloud APIs (Groq, OpenRouter, Gemini, Mistral) or OpenAI/Claude via one key each |
 | 🗂️ **Multi-chat sessions** | Sidebar of conversations, auto-titled, stored on disk — survives restarts |
 | 🧠 **Memory across chats** | Talia keeps facts & snippets in a local vector-ish store and recalls them in *any* conversation. Hover any message → 🧠 to pin it |
 | 🌐 **Perplexity-style research** | Flip the 🌐 toggle: Talia searches the live web, reads the top pages, and answers with numbered citations |
@@ -92,6 +94,23 @@ npm run dev                     # Vite UI on http://localhost:5183
 ```
 
 Open the app → pick a model in the ✨ dropdown → say hi.
+
+**No local model? No problem** — open Settings → Providers and pick a free-tier
+cloud API (Groq is the fastest free option; OpenRouter and Gemini have free
+models too). Paste the key, done. Everything else stays local.
+
+## 🤖 Bots & Skills
+
+Open **Bots** in the sidebar:
+
+- **Bots** are specialist teammates — 💻 Pixel (pair-programmer), ✍️ Quill
+  (editorial), 📊 Sage (structured analyst), 🦉 Owl (tutor), ⚡ Flick
+  (brainstormer), 🔎 Scout (cited web research). Pick one and that chat takes on
+  their brain. Create your own with a name, emoji, and system prompt — they
+  persist server-side and work with any model, free ones included.
+- **Skills** are one-tap expert tasks: 📝 Summarize, 🔍 Review code, 🌍 Translate,
+  🧸 Explain simply, ✅ Action items, ✉️ Draft email. Skills reuse the current
+  chat as context and stream like normal answers.
 
 ## 🧠 Memory (cross-chat)
 

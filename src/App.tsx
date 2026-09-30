@@ -8,6 +8,9 @@ import { ModelPickerModal } from "./components/ModelPickerModal";
 import { ModelCatalogModal } from "./components/ModelCatalogModal";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { MediaStudio } from "./components/MediaStudio";
+import { BotsSkillsModal } from "./components/BotsSkillsModal";
+import { fetchBots, type BotDef } from "./lib/botsApi";
+import { skillById } from "./lib/skills";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { ThemePicker } from "./components/ThemePicker";
 import { EmptyState } from "./components/StatusPill";
@@ -72,6 +75,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showStudio, setShowStudio] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
+  const [showBots, setShowBots] = useState(false);
+  const [bots, setBots] = useState<BotDef[]>([]);
   const [researchStatus, setResearchStatus] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [themeId, setThemeId] = useState<string>(loadTheme);
@@ -82,6 +87,12 @@ export default function App() {
     applyTheme(themeId);
     saveTheme(themeId);
   }, [themeId]);
+
+  // Bots for persona binding — refetched when the picker closes (cheap, local).
+  useEffect(() => {
+    if (showBots) return;
+    void fetchBots().then(setBots);
+  }, [showBots]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeId) ?? sessions[sessions.length - 1],
@@ -151,9 +162,13 @@ export default function App() {
     setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: Date.now() } : s)));
 
   // --- Sending -----------------------------------------------------------
-  const send = async (rawText: string): Promise<boolean> => {
+  // opts.regenerateOf: id of an assistant message to re-answer (drops it and
+  // regenerates from the conversation so far) instead of appending a new turn.
+  const send = async (rawText: string, opts: { regenerateOf?: string } = {}): Promise<boolean> => {
+    const regen = Boolean(opts.regenerateOf);
     const text = rawText.trim();
-    if (busy || !text || !activeSession) return false;
+    if (busy || !activeSession) return false;
+    if (!regen && !text) return false;
     if (!settings.model) {
       setNotice("Pick a model first — tap the ✨ button up top so Talia knows who she is today ♡");
       return false;
@@ -171,7 +186,7 @@ export default function App() {
     };
 
     // Title new chats from the first message
-    const isFirst = activeSession.messages.length === 0;
+    const isFirst = !regen && activeSession.messages.length === 0;
     if (isFirst) {
       patchSession(sessionId, {
         title: text.length > 38 ? `${text.slice(0, 36)}…` : text,
@@ -181,17 +196,31 @@ export default function App() {
     setBusy(true);
     stopFlag.current = false;
 
-    const currentMessages = [...activeSession.messages, userMsg];
+    const currentMessages = regen
+      ? activeSession.messages.filter((m) => m.id !== opts.regenerateOf)
+      : [...activeSession.messages, userMsg];
     patchSession(sessionId, { messages: [...currentMessages, assistantMsg] });
+
+    // What we ask memory/research about: the typed text, or for a regen the
+    // last user message in the remaining history.
+    const promptText = regen
+      ? ([...currentMessages].reverse().find((m) => m.role === "user")?.content ?? "")
+      : text;
 
     // Build system prompt: persona + date + memories + research
     const systemParts: string[] = [settings.systemPrompt, `Today is ${new Date().toDateString()}.`];
+
+    // Bot persona (per-session) replaces Talia's default voice when present.
+    if (activeSession.persona?.kind === "bot") {
+      const bot = bots.find((b) => b.id === activeSession.persona?.id);
+      if (bot?.systemPrompt) systemParts.push(bot.systemPrompt);
+    }
     let attachedSources: ChatMessage["sources"] | undefined;
 
     try {
       // 1) Memory recall (fast, local)
-      if (settings.autoRemember) {
-        const hits = await recallMemory(text, 5);
+      if (settings.autoRemember && promptText) {
+        const hits = await recallMemory(promptText, 5);
         if (hits.length > 0) {
           systemParts.push(
             "Things you remember about the user (use naturally, don't list them back verbatim):\n" +
@@ -201,7 +230,7 @@ export default function App() {
       }
 
       // 2) Research mode (slower, web) — gracefully skipped when offline
-      if (settings.ragEnabled) {
+      if (settings.ragEnabled && promptText) {
         if (!netOnline) {
           setNotice("🌐 You're offline — answering from my own knowledge instead of the web ♡");
           systemParts.push(
@@ -209,7 +238,7 @@ export default function App() {
           );
         } else {
           setResearchStatus("Searching the web…");
-          const r = await runResearch(text, 5);
+          const r = await runResearch(promptText, 5);
           if (r.ok && r.sources && r.sources.length > 0) {
             systemParts.push(r.context || "");
             attachedSources = r.sources;
@@ -308,7 +337,7 @@ export default function App() {
 
       // Post-response housekeeping: auto-remember + TTS
       const assistantText = assistantAccumulator.trim();
-      if (settings.autoRemember && assistantText) {
+      if (settings.autoRemember && assistantText && !regen) {
         void rememberExchange(text, assistantText, sessionId);
       }
       if (settings.ttsEnabled && assistantText) {
@@ -333,6 +362,118 @@ export default function App() {
       }).catch(() => {});
     }
     setBusy(false);
+  };
+
+  // --- Skills (one-shot expert tasks) -------------------------------------
+  const runSkill = async (skillId: string, input: string): Promise<void> => {
+    const skill = skillById(skillId);
+    if (!skill || busy || !activeSession) return;
+    if (!settings.model) {
+      setNotice("Pick a model first — tap the ✨ button up top ♡");
+      return;
+    }
+    const sessionId = activeSession.id;
+    // Recent conversation as skill context (skills that don't need it ignore it).
+    const history = activeSession.messages
+      .filter((m) => m.role !== "system")
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+      .join("\n\n")
+      .slice(-6000);
+    const built = skill.build({ text: input, context: history.trim() || undefined });
+
+    const assistantId = makeId();
+    const skillMsg: ChatMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      model: settings.model,
+      createdAt: Date.now(),
+    };
+    patchSession(sessionId, { messages: [...activeSession.messages, skillMsg] });
+    setBusy(true);
+    stopFlag.current = false;
+
+    const payloadMessages = [
+      ...(built.system ? [{ role: "system" as const, content: built.system }] : []),
+      { role: "user" as const, content: built.user },
+    ];
+    const controller = new AbortController();
+    abortRef.current = controller;
+    lastRequestId.current = assistantId;
+
+    try {
+      await streamChat(settings.provider, settings.model, payloadMessages, {
+        onToken: (tok) => {
+          if (stopFlag.current) return;
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    updatedAt: Date.now(),
+                    messages: s.messages.map((m) =>
+                      m.id === assistantId ? { ...m, content: m.content + tok } : m,
+                    ),
+                  }
+                : s,
+            ),
+          );
+        },
+        onDone: () => {
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    messages: s.messages
+                      .map((m) => (m.id === assistantId && m.content.trim() === "" ? null : m))
+                      .filter(Boolean) as ChatMessage[],
+                  }
+                : s,
+            ),
+          );
+        },
+        onError: (msg) => {
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    messages: s.messages.map((m) =>
+                      m.id === assistantId ? { ...m, content: `The skill hit a snag 🥺 — ${msg}` } : m,
+                    ),
+                  }
+                : s,
+            ),
+          );
+        },
+      }, controller.signal, assistantId);
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+  };
+
+  // Re-answer an assistant message from the conversation so far.
+  const regenerateMessage = (messageId: string) => {
+    if (busy) return;
+    void send("", { regenerateOf: messageId });
+  };
+
+  // --- Bots (session personas) --------------------------------------------
+  const newChatWithBot = (bot: BotDef) => {
+    stop();
+    const now = Date.now();
+    const s: ChatSession = {
+      id: makeId(),
+      title: `${bot.emoji} ${bot.name}`,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      persona: { kind: "bot", id: bot.id, name: bot.name, emoji: bot.emoji },
+    };
+    setSessions((prev) => [...prev, s]);
+    setActiveId(s.id);
   };
 
   const newChat = () => {
@@ -405,6 +546,7 @@ export default function App() {
         onDelete={deleteSession}
         onOpenMemory={() => setShowMemory(true)}
         onOpenStudio={() => setShowStudio(true)}
+        onOpenBots={() => setShowBots(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -448,6 +590,7 @@ export default function App() {
                     isStreaming={busy && m.id === messages[messages.length - 1]?.id}
                     theme={themeId}
                     onRemember={rememberOne}
+                    onRegenerate={m.role === "assistant" ? (msg) => regenerateMessage(msg.id) : undefined}
                   />
                 ))}
               </AnimatePresence>
@@ -522,6 +665,13 @@ export default function App() {
         themeId={themeId}
       />
       <MediaStudio open={showStudio} onClose={() => setShowStudio(false)} />
+      <BotsSkillsModal
+        open={showBots}
+        onClose={() => setShowBots(false)}
+        onSpawnBot={newChatWithBot}
+        onRunSkill={(id, input) => void runSkill(id, input)}
+        skillBusy={busy}
+      />
       <MemoryPanel open={showMemory} onClose={() => setShowMemory(false)} onUpload={uploadChatToMemory} />
       <ThemePicker
         open={showThemes}
