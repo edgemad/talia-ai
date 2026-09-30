@@ -45,6 +45,7 @@ import {
   speakText,
 } from "./lib/serverApi";
 import { applyTheme, loadTheme, saveTheme } from "./lib/themes";
+import { getApiBase, setApiBase, apiUrl } from "./lib/appMode";
 import { useOnline } from "./lib/useOnline";
 import type { ChatMessage, ChatSession, Settings } from "./types";
 
@@ -81,6 +82,12 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [themeId, setThemeId] = useState<string>(loadTheme);
   const [showThemes, setShowThemes] = useState(false);
+  const [serverAddress, setServerAddress] = useState<string>(getApiBase());
+  const [askAddress, setAskAddress] = useState<boolean>(() =>
+    // Android clients open a connect panel until they've reached their server;
+    // desktop is same-origin so it never sees this.
+    Boolean(getApiBase()) || /android/i.test(navigator.userAgent),
+  );
   const netOnline = useOnline();
 
   useEffect(() => {
@@ -365,7 +372,7 @@ export default function App() {
     stopFlag.current = true;
     abortRef.current?.abort();
     if (lastRequestId.current) {
-      fetch("/api/stop", {
+      fetch(apiUrl("/api/stop"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestId: lastRequestId.current }),
@@ -586,6 +593,53 @@ export default function App() {
             style={{ color: "var(--warn)" }}
           >
             📴 Offline mode — chatting & memory work, web research is paused
+          </motion.div>
+        )}
+
+        {askAddress && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-strong mx-auto mt-2 flex w-fit max-w-[92%] flex-wrap items-center gap-2 rounded-full px-4 py-2"
+          >
+            <span className="text-[11px] font-bold" style={{ color: "var(--text-soft)" }}>
+              📱 Connect to your Talia server:
+            </span>
+            <input
+              value={serverAddress}
+              onChange={(e) => setServerAddress(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setApiBase(serverAddress);
+                  setNotice("Connecting… 📡");
+                  pollHealth();
+                  refreshModels();
+                }
+              }}
+              placeholder="http://192.168.1.20:8787"
+              className="min-w-0 flex-1 rounded-full border px-3 py-1 font-mono text-[12px] outline-none focus:border-accent"
+              style={{ background: "var(--surface-strong)", borderColor: "var(--border)", color: "var(--text)" }}
+            />
+            <button
+              onClick={() => {
+                setApiBase(serverAddress);
+                setNotice("Connecting… 📡");
+                pollHealth();
+                refreshModels();
+              }}
+              className="rounded-full px-3 py-1 text-[11px] font-extrabold text-white"
+              style={{ background: "var(--accent-grad)" }}
+            >
+              Connect
+            </button>
+            <button
+              onClick={() => setAskAddress(false)}
+              className="rounded-full px-2 py-1 text-[11px] font-bold"
+              style={{ color: "var(--text-faint)" }}
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
           </motion.div>
         )}
 

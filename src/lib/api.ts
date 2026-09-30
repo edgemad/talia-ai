@@ -1,4 +1,5 @@
 import type { ProviderConfig, Role } from "../types";
+import { apiUrl } from "./appMode";
 
 export interface StreamHandlers {
   onToken: (token: string) => void;
@@ -17,7 +18,7 @@ export async function streamChat(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch("/api/chat", {
+    res = await fetch(apiUrl("/api/chat"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -99,7 +100,7 @@ export async function streamChat(
 export async function fetchProviderHealth(baseUrl: string): Promise<{ online: boolean; status: number }> {
   try {
     const res = await fetch(
-      `/api/provider/health?baseUrl=${encodeURIComponent(baseUrl)}`,
+      apiUrl(`/api/provider/health?baseUrl=${encodeURIComponent(baseUrl)}`),
     );
     return await res.json();
   } catch {
@@ -116,7 +117,7 @@ export async function fetchModels(
 ): Promise<{ ok: boolean; models: DiscoveredModel[]; error?: string }> {
   try {
     const res = await fetch(
-      `/api/provider/models?baseUrl=${encodeURIComponent(baseUrl)}`,
+      apiUrl(`/api/provider/models?baseUrl=${encodeURIComponent(baseUrl)}`),
     );
     const body = await res.json();
     if (!res.ok || !body?.ok) {

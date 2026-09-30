@@ -22,6 +22,8 @@ jobs:
             args: "--bundles appimage,deb,rpm"
           - os: windows-latest
             args: "--bundles nsis,msi"
+          - os: ubuntu-latest
+            android: true
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -63,14 +65,57 @@ jobs:
           mkdir -p /tmp/node-x64 && tar -xzf /tmp/node-x64.tar.gz -C /tmp/node-x64 --strip-components=1
           TALIA_SEA_NODE=/tmp/node-x64/bin/node npm run sidecar
 
+      # Android thin-client APK: UI ships in the app, AI runs on your
+      # computer (the desktop app or `npm run server`) — connect over WiFi.
+      - name: Set up Java
+        if: matrix.android
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Accept Android SDK licenses
+        if: matrix.android
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Install Android Rust target
+        if: matrix.android
+        run: rustup target add aarch64-linux-android
+
+      - name: Install Tauri Android scaffolding
+        if: matrix.android
+        working-directory: src-tauri
+        run: |
+          cargo install tauri-cli --version '^2' --locked
+          cargo tauri android init || true
+
+      - name: Build Android APK
+        if: matrix.android
+        working-directory: src-tauri
+        env:
+          TAURI_ANDROID_KEYSTORE_PATH: ''
+        run: cargo tauri android build --target aarch64 --apk
+
+      - name: Upload Android APK to release
+        if: matrix.android
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
+          test -n "$APK"
+          VERSION=$(node -p "require('./package.json').version")
+          cp "$APK" "Talia.AI_${VERSION}_aarch64.apk"
+          gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.apk" --repo "$GITHUB_REPOSITORY" --clobber
+
       - name: Build Tauri app
+        if: ${{ !matrix.android }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Talia AI v__VERSION__"
-          releaseBody: "Cozy local LLM chat companion — cross-chat memory, research, media studio. All data stays on your machine."
+          releaseBody: "Cozy local LLM chat companion — cross-chat memory, research, media studio, bots & skills. Desktop runs everything locally; the Android app is a client for your computer's Talia server."
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

@@ -64,6 +64,17 @@ fn main() {
             }
         }))
         .setup(|app| {
+            #[cfg(target_os = "android")]
+            {
+                // Android is a thin client: the API runs on your computer
+                // ("start server" in the desktop app), the UI shows its
+                // connect banner and talks to it over the network. UI comes
+                // from the bundled dist (tauri://localhost).
+                return Ok(());
+            }
+
+            #[cfg(not(target_os = "android"))]
+            {
             // The sidecar serves the frontend from dist/ (same as standalone
             // `npm run server`), so point it at the bundled resources copy.
             let dist_dir = app
@@ -126,6 +137,7 @@ fn main() {
             }
             // If the API never came up, the window stays on the bundled
             // offline shell (dist/index.html), which shows the offline banner.
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

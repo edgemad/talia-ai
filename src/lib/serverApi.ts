@@ -1,8 +1,9 @@
 // Client for Talia's v2 server features.
 import type { CatalogModel, ChatMessage, MemoryItem, ResearchSource } from "../types";
+import { apiUrl } from "./appMode";
 
 async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const r = await fetch(url, {
+  const r = await fetch(apiUrl(url), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -14,7 +15,7 @@ async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Pr
 // ---------- Sessions ------------------------------------------------------
 export async function loadServerSessions(): Promise<unknown[] | null> {
   try {
-    const r = await fetch("/api/sessions");
+    const r = await fetch(apiUrl("/api/sessions"));
     const j = await r.json();
     return j?.ok ? j.sessions : null;
   } catch {
@@ -24,7 +25,7 @@ export async function loadServerSessions(): Promise<unknown[] | null> {
 
 export async function saveServerSessions(sessions: unknown): Promise<boolean> {
   try {
-    const r = await fetch("/api/sessions", {
+    const r = await fetch(apiUrl("/api/sessions"), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessions }),
@@ -38,7 +39,7 @@ export async function saveServerSessions(sessions: unknown): Promise<boolean> {
 // ---------- Memory ---------------------------------------------------------
 export async function fetchMemory(): Promise<MemoryItem[]> {
   try {
-    const r = await fetch("/api/memory");
+    const r = await fetch(apiUrl("/api/memory"));
     const j = await r.json();
     return j?.ok ? j.items : [];
   } catch {
@@ -68,11 +69,11 @@ export async function recallMemory(query: string, limit = 6): Promise<MemoryItem
 }
 
 export async function forgetMemoryItem(id: string) {
-  await fetch(`/api/memory/${id}`, { method: "DELETE" });
+  await fetch(apiUrl(`/api/memory/${encodeURIComponent(id)}`), { method: "DELETE" });
 }
 
 export async function forgetAllMemory() {
-  await fetch("/api/memory", { method: "DELETE" });
+  await fetch(apiUrl("/api/memory"), { method: "DELETE" });
 }
 
 // ---------- Research --------------------------------------------------------
@@ -115,7 +116,7 @@ export const generateVideo = (body: Record<string, unknown>) =>
 // ---------- Model catalog ----------------------------------------------------
 export async function fetchCatalog(): Promise<CatalogModel[]> {
   try {
-    const r = await fetch("/api/models/catalog");
+    const r = await fetch(apiUrl("/api/models/catalog"));
     const j = await r.json();
     return j?.catalog ?? [];
   } catch {
@@ -129,7 +130,7 @@ export async function pullModel(
   onProgress: (status: string, pct: number | null) => void,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch("/api/models/pull", {
+    const res = await fetch(apiUrl("/api/models/pull"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ baseUrl, model }),
