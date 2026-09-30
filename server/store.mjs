@@ -14,6 +14,8 @@ async function pathFor(collection) {
 }
 
 export async function readCollection(collection, fallback) {
+  // Writes are debounced; reads must still see them immediately.
+  if (pending.has(collection)) return pending.get(collection);
   try {
     const raw = await readFile(await pathFor(collection), "utf8");
     return JSON.parse(raw);

@@ -9,6 +9,15 @@ import { ModelCatalogModal } from "./components/ModelCatalogModal";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { MediaStudio } from "./components/MediaStudio";
 import { BotsSkillsModal } from "./components/BotsSkillsModal";
+import { GamesModal } from "./components/GamesModal";
+import { GameHud } from "./components/GameHud";
+import {
+  endGame,
+  gameMove,
+  startGame,
+  type ActiveGame,
+  type GameDef,
+} from "./lib/gamesApi";
 import { fetchBots, type BotDef } from "./lib/botsApi";
 import { skillById } from "./lib/skills";
 import { MemoryPanel } from "./components/MemoryPanel";
@@ -77,7 +86,10 @@ export default function App() {
   const [showStudio, setShowStudio] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
   const [showBots, setShowBots] = useState(false);
+  const [showGames, setShowGames] = useState(false);
   const [bots, setBots] = useState<BotDef[]>([]);
+  // Live game session per chat — the Arcade pins a game to the conversation.
+  const [gamesByChat, setGamesByChat] = useState<Record<string, ActiveGame>>({});
   const [researchStatus, setResearchStatus] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [themeId, setThemeId] = useState<string>(loadTheme);
@@ -106,6 +118,7 @@ export default function App() {
     [sessions, activeId],
   );
   const messages = activeSession?.messages ?? [];
+  const activeGame = activeSession ? gamesByChat[activeSession.id] ?? null : null;
 
   const stopFlag = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -168,6 +181,160 @@ export default function App() {
   const patchSession = (id: string, patch: Partial<ChatSession>) =>
     setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: Date.now() } : s)));
 
+  // --- Games: route chat through the arcade while a game is live ----------
+  const gameMoveSend = async (text: string): Promise<boolean> => {
+    if (!activeSession || !activeGame || busy) return false;
+    // Pure engine games need no model at all; LLM-voiced games fall back to
+    // deterministic engine text when no model is picked (server handles it).
+    if (!settings.model) {
+      setNotice("💡 Tip: pick a model for Talia's voice — the game itself works without one ♡");
+    }
+    const sessionId = activeSession.id;
+    const assistantId = makeId();
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      model: settings.model,
+      createdAt: Date.now(),
+    };
+    const userMsg: ChatMessage = { id: makeId(), role: "user", content: text, createdAt: Date.now() };
+    patchSession(sessionId, { messages: [...activeSession.messages, userMsg, assistantMsg] });
+    setBusy(true);
+    stopFlag.current = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    lastRequestId.current = assistantId;
+
+    const appendToken = (tok: string) =>
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                messages: s.messages.map((m) =>
+                  m.id === assistantId ? { ...m, content: m.content + tok } : m,
+                ),
+              }
+            : s,
+        ),
+      );
+
+    try {
+      await gameMove(
+        activeGame.sessionId,
+        text,
+        settings.provider,
+        settings.model || "",
+        {
+          onState: (state) =>
+            setGamesByChat((prev) => ({
+              ...prev,
+              [sessionId]: { ...prev[sessionId], state },
+            })),
+          onToken: (tok) => {
+            if (!stopFlag.current) appendToken(tok);
+          },
+          onEngineReply: (reply) => {
+            if (stopFlag.current) return;
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((m) =>
+                        m.id === assistantId ? { ...m, content: reply } : m,
+                      ),
+                    }
+                  : s,
+              ),
+            );
+          },
+          onDone: (status) => {
+            if (status && status !== "playing") {
+              setNotice(status === "won" ? "🏆 You won! Hit “Play again” for a rematch ♡" : "GG! Rematch? 🎮");
+            }
+          },
+          onError: (msg) => {
+            if (stopFlag.current) return;
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      messages: s.messages.map((m) =>
+                        m.id === assistantId
+                          ? { ...m, content: `🎮 Game hiccup: ${msg}\n\nTry again in a moment!` }
+                          : m,
+                      ),
+                    }
+                  : s,
+              ),
+            );
+          },
+        },
+        controller.signal,
+      );
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+    return true;
+  };
+
+  const startPlaying = async (game: GameDef) => {
+    stop();
+    const now = Date.now();
+    const s: ChatSession = {
+      id: makeId(),
+      title: `${game.emoji} ${game.name}`,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    setSessions((prev) => [...prev, s]);
+    setActiveId(s.id);
+    const r = await startGame(game.id, s.id);
+    if (!r.ok || !r.session) {
+      setNotice(r.error ?? "Couldn't start the game 🥺");
+      return;
+    }
+    setGamesByChat((prev) => ({ ...prev, [s.id]: r.session! }));
+    if (r.intro) {
+      const introMsg: ChatMessage = {
+        id: makeId(),
+        role: "assistant",
+        content: r.intro,
+        model: settings.model,
+        createdAt: Date.now(),
+      };
+      setSessions((prev) =>
+        prev.map((x) => (x.id === s.id ? { ...x, messages: [introMsg], updatedAt: Date.now() } : x)),
+      );
+    }
+  };
+
+  const endActiveGame = async () => {
+    if (!activeGame || !activeSession) return;
+    await endGame(activeGame.sessionId);
+    setGamesByChat((prev) => {
+      const next = { ...prev };
+      delete next[activeSession.id];
+      return next;
+    });
+    setNotice("Game ended — the Arcade is always open 🎮");
+  };
+
+  const playAgain = async (game: ActiveGame) => {
+    if (!activeSession) return;
+    const r = await startGame(game.gameId, activeSession.id);
+    if (!r.ok || !r.session) {
+      setNotice(r.error ?? "Couldn't restart the game 🥺");
+      return;
+    }
+    setGamesByChat((prev) => ({ ...prev, [activeSession.id]: r.session! }));
+  };
+
   // --- Sending -----------------------------------------------------------
   // opts.regenerateOf: id of an assistant message to re-answer (drops it and
   // regenerates from the conversation so far) instead of appending a new turn.
@@ -175,6 +342,10 @@ export default function App() {
     const regen = Boolean(opts.regenerateOf);
     const text = rawText.trim();
     if (busy || !activeSession) return false;
+    // While a game is live, chat text is a game move (regeneration would
+    // desync the server-authoritative game state, so it's a no-op).
+    if (activeGame && !regen) return gameMoveSend(text);
+    if (activeGame && regen) return false;
     if (!regen && !text) return false;
     if (!settings.model) {
       setNotice("Pick a model first — tap the ✨ button up top so Talia knows who she is today ♡");
@@ -566,6 +737,7 @@ export default function App() {
         onOpenMemory={() => setShowMemory(true)}
         onOpenStudio={() => setShowStudio(true)}
         onOpenBots={() => setShowBots(true)}
+        onOpenGames={() => setShowGames(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -672,6 +844,15 @@ export default function App() {
           </div>
         )}
 
+        {activeGame && (
+          <GameHud
+            game={activeGame}
+            busy={busy}
+            onEnd={() => void endActiveGame()}
+            onPlayAgain={() => void playAgain(activeGame)}
+          />
+        )}
+
         <Composer
           onSend={send}
           onStop={stop}
@@ -739,6 +920,11 @@ export default function App() {
         onSpawnBot={newChatWithBot}
         onRunSkill={(id, input) => void runSkill(id, input)}
         skillBusy={busy}
+      />
+      <GamesModal
+        open={showGames}
+        onClose={() => setShowGames(false)}
+        onPlay={(g) => void startPlaying(g)}
       />
       <MemoryPanel open={showMemory} onClose={() => setShowMemory(false)} onUpload={uploadChatToMemory} />
       <ThemePicker

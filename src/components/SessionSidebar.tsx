@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Plus, Trash2, Brain, Wand2, Bot } from "lucide-react";
+import { Plus, Trash2, Brain, Wand2, Bot, Gamepad2 } from "lucide-react";
 import type { ChatSession } from "../types";
 
 export function SessionSidebar({
@@ -12,6 +12,7 @@ export function SessionSidebar({
   onOpenMemory,
   onOpenStudio,
   onOpenBots,
+  onOpenGames,
 }: {
   open: boolean;
   sessions: ChatSession[];
@@ -22,6 +23,7 @@ export function SessionSidebar({
   onOpenMemory: () => void;
   onOpenStudio: () => void;
   onOpenBots: () => void;
+  onOpenGames: () => void;
 }) {
   return (
     <motion.aside
@@ -61,6 +63,13 @@ export function SessionSidebar({
             style={{ color: "var(--text-soft)" }}
           >
             <Wand2 size={12} className="text-accent" /> Studio
+          </button>
+          <button
+            onClick={onOpenGames}
+            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
+            style={{ color: "var(--text-soft)" }}
+          >
+            <Gamepad2 size={12} className="text-accent-2" /> Games
           </button>
         </div>
       </div>

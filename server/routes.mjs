@@ -20,6 +20,18 @@ import {
   deleteBot,
 } from "./bots.mjs";
 import { buildProviderRequest, validateProviderConfig } from "./provider.mjs";
+import {
+  listGames,
+  getPlayableGame,
+  installPack,
+  uninstallPack,
+  listInstalledPacks,
+  startGameSession,
+  getGameSession,
+  endGameSession,
+  sanitizeGameState,
+} from "./games.mjs";
+import { CATALOGUE } from "./gamePacks.mjs";
 
 export const api = Router();
 
@@ -139,6 +151,181 @@ const PROVIDER_PRESETS = [
 api.get("/providers", (_req, res) => {
   res.json({ ok: true, providers: PROVIDER_PRESETS });
 });
+
+// ---------- Games Arcade ----------------------------------------------------
+api.get("/games", async (_req, res) => {
+  res.json({ ok: true, games: await listGames() });
+});
+
+api.get("/games/catalogue", async (_req, res) => {
+  const installed = new Set((await listInstalledPacks()).map((p) => p.id));
+  const catalogue = CATALOGUE.map(({ data, ...meta }) => ({
+    ...meta,
+    installed: installed.has(meta.id),
+    items: data?.questions?.length ?? data?.words?.length ?? data?.maxRounds ?? 0,
+  }));
+  res.json({ ok: true, catalogue });
+});
+
+api.post("/games/install", async (req, res) => {
+  const id = String(req.body?.id || "");
+  const r = await installPack(id);
+  if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+  res.json({ ok: true, game: { ...r.pack, engineImpl: undefined, data: undefined } });
+});
+
+api.post("/games/uninstall", async (req, res) => {
+  const ok = await uninstallPack(String(req.body?.id || ""));
+  res.json({ ok });
+});
+
+api.post("/games/start", async (req, res) => {
+  const gameId = String(req.body?.gameId || "");
+  const chatId = String(req.body?.chatId || "");
+  const game = await getPlayableGame(gameId);
+  if (!game?.engineImpl) {
+    return res.status(404).json({ ok: false, error: "Unknown game — install it from the catalogue first." });
+  }
+  const state = game.engineImpl.seed({
+    difficulty: req.body?.difficulty,
+    level: req.body?.level,
+    theme: req.body?.theme,
+  });
+  const session = startGameSession({ gameId, chatId, game, state });
+  const intro = game.engineImpl.intro?.(state) ?? "Let's play!";
+  session.history.push({ role: "assistant", content: intro });
+  res.json({
+    ok: true,
+    sessionId: session.id,
+    game: { id: game.id, name: game.name, emoji: game.emoji, howTo: game.howTo, needsLlm: !!game.needsLlm },
+    state: sanitizeGameState(state),
+    intro,
+  });
+});
+
+// Submit a move. Always SSE: first a `state` event with the fresh sanitized
+// game state, then either streamed model tokens or a deterministic engine
+// reply, then a `done` event. One response shape, one client parser.
+api.post("/games/:sid/move", async (req, res) => {
+  const session = getGameSession(String(req.params.sid || ""));
+  if (!session) {
+    return res.status(404).json({ ok: false, error: "game-session-gone" });
+  }
+  const text = String(req.body?.text ?? "").slice(0, 2000);
+  const provider = req.body?.provider;
+  const model = req.body?.model;
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  let result;
+  try {
+    result = session.engine.step(session.state, text);
+  } catch (err) {
+    send({ type: "error", error: `Game engine hiccup: ${err.message}` });
+    return res.end();
+  }
+  session.state = result.state;
+  session.touch();
+  send({ type: "state", state: sanitizeGameState(session.state) });
+
+  const finishWith = (fullText) => {
+    session.history.push({ role: "user", content: text });
+    session.history.push({ role: "assistant", content: fullText });
+    if (session.history.length > 24) session.history.splice(0, session.history.length - 24);
+    const over = session.state.status && session.state.status !== "playing";
+    send({ type: "done", status: session.state.status, summary: over ? finalSummary(session) : null });
+    if (over) endGameSession(session.id);
+    res.end();
+  };
+
+  const needsLlm = result.needsLlm && session.game.needsLlm !== false;
+  if (!needsLlm) {
+    const reply = result.reply ?? result.fallback ?? "";
+    send({ type: "engine", text: reply });
+    return finishWith(reply);
+  }
+
+  // LLM-voiced move (twenty questions, story chain, prompt packs).
+  if (!validateProviderConfig(provider) || !model) {
+    const reply = result.reply ?? result.fallback ?? session.engine.fallback?.(session.state, session.game) ?? "Your turn!";
+    send({ type: "engine", text: reply });
+    return finishWith(reply);
+  }
+  try {
+    const system =
+      (result.wrap ? "This is the FINAL turn — wrap things up now.\n" : "") +
+      (session.engine.systemPrompt?.(session.state, session.game) ?? "You are a playful game host. Keep replies short, kind and fun.");
+    const messages = [
+      { role: "system", content: system },
+      ...session.history.slice(-8).map((h) => ({ role: h.role, content: h.content })),
+      { role: "user", content: String(result.prompt ?? text) },
+    ];
+    const upstream = await fetch(buildProviderRequest(provider, messages, model));
+    if (!upstream.ok || !upstream.body) throw new Error(`provider ${upstream.status}`);
+    const reader = upstream.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let acc = "";
+    let closed = false;
+    res.on("close", () => {
+      closed = true;
+      try { reader.cancel(); } catch { /* ignore */ }
+    });
+    let doneReceived = false;
+    while (!closed && !doneReceived) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (payload === "[DONE]") { doneReceived = true; break; }
+        try {
+          const evt = JSON.parse(payload);
+          const token = evt?.choices?.[0]?.delta?.content ?? evt?.choices?.[0]?.text ?? "";
+          if (token) {
+            acc += token;
+            send({ type: "token", token });
+          }
+        } catch { /* skip malformed */ }
+      }
+    }
+    const full = acc.trim();
+    if (!full) throw new Error("empty reply");
+    return finishWith(full);
+  } catch {
+    // Reliability guarantee: a game move NEVER dead-ends — fall back to the
+    // engine's deterministic reply so play always continues.
+    const reply = result.reply ?? result.fallback ?? session.engine.fallback?.(session.state, session.game) ?? "Your turn!";
+    send({ type: "engine", text: reply });
+    return finishWith(reply);
+  }
+});
+
+api.post("/games/:sid/end", (req, res) => {
+  endGameSession(String(req.params.sid || ""));
+  res.json({ ok: true });
+});
+
+function finalSummary(session) {
+  const s = session.state;
+  const name = session.game?.name ?? "Game";
+  if (s.status === "won") {
+    const score = typeof s.score === "number" ? ` Score: ${s.score}.` : "";
+    return `You won ${name}!${score} 🏆`;
+  }
+  if (s.status === "draw") return `${name} ended in a draw 🤝`;
+  return `Good game! ${name} ended — play again anytime.`;
+}
 
 // ---------- Sessions (server-side, cross-chat persistence) ---------------
 api.get("/sessions", async (_req, res) => {
