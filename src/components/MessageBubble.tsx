@@ -68,7 +68,7 @@ export function MessageBubble({
         </div>
       )}
 
-      <div className={`flex max-w-[78%] flex-col sm:max-w-[72%] ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex min-w-0 max-w-[78%] flex-col sm:max-w-[72%] ${isUser ? "items-end" : "items-start"}`}>
         <div
           className={`rounded-3xl px-4 py-2.5 text-[15px] ${
             isUser ? "bubble-user rounded-br-lg shadow-plush" : "bubble-ai glass-sheen rounded-bl-lg shadow-plush"

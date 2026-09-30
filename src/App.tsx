@@ -259,6 +259,14 @@ export default function App() {
       ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
+    // Custom model presets carry their own temperature — apply it when the
+    // selected model matches, so presets actually change generation.
+    const customPreset = settings.customModels.find((c) => c.id === settings.model);
+    const payloadProvider = {
+      ...settings.provider,
+      temperature: customPreset?.temperature ?? settings.provider.temperature,
+    };
+
     const controller = new AbortController();
     abortRef.current = controller;
     lastRequestId.current = assistantId;
@@ -279,7 +287,7 @@ export default function App() {
 
     try {
       await streamChat(
-        settings.provider,
+        payloadProvider,
         settings.model,
         payloadMessages,
         {
@@ -312,6 +320,8 @@ export default function App() {
             );
           },
           onError: (msg) => {
+            // User pressed stop — don't paint an error over the abort.
+            if (stopFlag.current) return;
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId
@@ -434,6 +444,8 @@ export default function App() {
           );
         },
         onError: (msg) => {
+          // User pressed stop — don't paint an error over the abort.
+          if (stopFlag.current) return;
           setSessions((prev) =>
             prev.map((s) =>
               s.id === sessionId

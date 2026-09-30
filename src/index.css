@@ -286,7 +286,10 @@ body {
 .prose-talia pre code { background: transparent; border: none; padding: 0; color: inherit; }
 .prose-talia a { text-decoration: underline; text-decoration-color: var(--accent-2); text-underline-offset: 2px; }
 .prose-talia blockquote { margin: 8px 0; border-left: 4px solid var(--accent); padding-left: 12px; font-style: italic; color: var(--text-soft); }
+.prose-talia img, .prose-talia video { max-width: 100%; border-radius: 12px; }
 .prose-talia table { margin: 8px 0; width: 100%; font-size: 14px; border-collapse: collapse; }
+/* Wide tables scroll inside the bubble instead of stretching it */
+.prose-talia table { display: block; overflow-x: auto; }
 .prose-talia th, .prose-talia td { border: 1px solid var(--border); padding: 4px 8px; }
 .prose-talia th { background: var(--surface); }
 
