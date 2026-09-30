@@ -66,13 +66,17 @@ fn find_sidecar(app: &tauri::AppHandle) -> Option<PathBuf> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
-            }
-        }))
+    let builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
+
+    // Desktop-only: tauri-plugin-single-instance exposes no `init` on mobile.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .setup(|app| {
             #[cfg(target_os = "android")]
             {

@@ -37,6 +37,9 @@ const exe = process.platform === "win32" ? "talia-server.exe" : "talia-server";
 
 // Rust target triple: prefer the one Tauri passes to build hooks.
 function rustTriple() {
+  // Standalone (non-tauri-hook) runs can force a target, e.g. producing the
+  // x64 macOS sidecar on an arm64 runner via TALIA_SEA_NODE.
+  if (process.env.TALIA_TARGET_TRIPLE) return process.env.TALIA_TARGET_TRIPLE;
   const env = process.env.TAURI_ENV_TARGET_TRIPLE;
   if (env) return env;
   const arch = process.arch === "arm64" ? "aarch64" : "x86_64";

@@ -64,7 +64,7 @@ jobs:
           softwareupdate --install-rosetta --agree-to-license || true
           curl -fsSL https://nodejs.org/dist/v26.10.0/node-v26.10.0-darwin-x64.tar.gz -o /tmp/node-x64.tar.gz
           mkdir -p /tmp/node-x64 && tar -xzf /tmp/node-x64.tar.gz -C /tmp/node-x64 --strip-components=1
-          TALIA_SEA_NODE=/tmp/node-x64/bin/node npm run sidecar
+          TALIA_SEA_NODE=/tmp/node-x64/bin/node TALIA_TARGET_TRIPLE=x86_64-apple-darwin npm run sidecar
 
       - name: Build sidecar (host target)
         if: matrix.args != '--target x86_64-apple-darwin' && !matrix.android
