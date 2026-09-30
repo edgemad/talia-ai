@@ -232,33 +232,60 @@ api.post("/media/video", async (req, res) => {
   res.json(await generateVideo(req.body, req.body?.baseUrl));
 });
 
-// ---------- Model catalog (uncensored / capable local models) ---------------
+// ---------- Model catalog (ready to download, starters first) -------------
 const CATALOG = [
   {
-    id: "dolphin-mixtral:8x7b",
-    name: "Dolphin Mixtral 8x7B",
-    family: "cognitivecomputations/dolphin-mixtral",
-    size: "26 GB",
-    tags: ["uncensored", "general", "powerful"],
-    blurb: "The classic uncensored workhorse. Excellent instruction following, zero moralizing.",
-    pulls: 2,
-  },
-  {
-    id: "dolphin-mistral:7b",
-    name: "Dolphin Mistral 7B",
-    family: "cognitivecomputations/dolphin-mistral",
-    size: "4.1 GB",
-    tags: ["uncensored", "fast"],
-    blurb: "Lightweight uncensored daily driver. Great on 8 GB machines.",
+    id: "llama3.2:3b",
+    name: "Llama 3.2 3B",
+    family: "meta/llama3.2",
+    size: "2 GB",
+    tags: ["starter", "fast", "tiny"],
+    blurb: "Tiny everyday model — start here if you're new or on modest hardware.",
     pulls: 1,
   },
   {
-    id: "dolphin3:8b",
-    name: "Dolphin 3 (Llama 3.1 8B)",
-    family: "cognitivecomputations/dolphin3",
+    id: "gemma3:4b",
+    name: "Gemma 3 4B",
+    family: "google/gemma3",
+    size: "3.3 GB",
+    tags: ["starter", "vision", "fast"],
+    blurb: "Google's newest small model — punchy for its size and reads images too.",
+    pulls: 1,
+  },
+  {
+    id: "qwen3:4b",
+    name: "Qwen 3 4B",
+    family: "qwen/qwen3",
+    size: "3.6 GB",
+    tags: ["starter", "reasoning"],
+    blurb: "Thinks step-by-step on hard problems, still light enough for laptops.",
+    pulls: 1,
+  },
+  {
+    id: "llama3.1:8b",
+    name: "Llama 3.1 8B",
+    family: "meta/llama3.1",
     size: "4.9 GB",
-    tags: ["uncensored", "general"],
-    blurb: "Newer Dolphin tuned on Llama 3.1 — strong general assistant.",
+    tags: ["general", "balanced"],
+    blurb: "The reliable all-rounder — great default if you have 8 GB+ free.",
+    pulls: 1,
+  },
+  {
+    id: "qwen2.5:7b",
+    name: "Qwen 2.5 7B",
+    family: "qwen/qwen2.5",
+    size: "4.7 GB",
+    tags: ["general", "multilingual"],
+    blurb: "Strong general knowledge and 29+ languages.",
+    pulls: 1,
+  },
+  {
+    id: "mistral-nemo:7b",
+    name: "Mistral Nemo 7B",
+    family: "mistralai/mistral-nemo",
+    size: "4.8 GB",
+    tags: ["general", "fast", "apache"],
+    blurb: "Quick, chatty, Apache-licensed. A friendly daily driver.",
     pulls: 1,
   },
   {
@@ -267,7 +294,16 @@ const CATALOG = [
     family: "qwen/qwen2.5-coder",
     size: "4.7 GB",
     tags: ["code", "apache"],
-    blurb: "Best-in-class small coding model, Apache-2.0. Pairs well with Dolphin for general chat.",
+    blurb: "Best-in-class small coding model. Pairs well with Dolphin for general chat.",
+    pulls: 1,
+  },
+  {
+    id: "deepseek-r1:7b",
+    name: "DeepSeek R1 7B (distilled)",
+    family: "deepseek/deepseek-r1",
+    size: "4.7 GB",
+    tags: ["reasoning", "math"],
+    blurb: "Chain-of-thought reasoner — math, logic and step-by-step problems.",
     pulls: 1,
   },
   {
@@ -289,12 +325,48 @@ const CATALOG = [
     pulls: 1,
   },
   {
-    id: "llama3.2:3b",
-    name: "Llama 3.2 3B",
-    family: "meta/llama3.2",
-    size: "2 GB",
-    tags: ["fast", "tiny"],
-    blurb: "Tiny everyday model for modest hardware.",
+    id: "dolphin-mistral:7b",
+    name: "Dolphin Mistral 7B",
+    family: "cognitivecomputations/dolphin-mistral",
+    size: "4.1 GB",
+    tags: ["uncensored", "fast"],
+    blurb: "Lightweight uncensored daily driver. Great on 8 GB machines.",
+    pulls: 1,
+  },
+  {
+    id: "dolphin3:8b",
+    name: "Dolphin 3 (Llama 3.1 8B)",
+    family: "cognitivecomputations/dolphin3",
+    size: "4.9 GB",
+    tags: ["uncensored", "general"],
+    blurb: "Newer Dolphin tuned on Llama 3.1 — strong general assistant.",
+    pulls: 1,
+  },
+  {
+    id: "dolphin-mixtral:8x7b",
+    name: "Dolphin Mixtral 8x7B",
+    family: "cognitivecomputations/dolphin-mixtral",
+    size: "26 GB",
+    tags: ["uncensored", "general", "powerful"],
+    blurb: "The classic uncensored workhorse. Excellent instruction following, zero moralizing.",
+    pulls: 2,
+  },
+  {
+    id: "qwen2.5-coder:32b",
+    name: "Qwen 2.5 Coder 32B",
+    family: "qwen/qwen2.5-coder",
+    size: "20 GB",
+    tags: ["code", "powerful"],
+    blurb: "Near-GPT-4-class coding on your own machine, if you have the VRAM.",
+    pulls: 1,
+  },
+  {
+    id: "phi3:mini",
+    name: "Phi-3 Mini",
+    family: "microsoft/phi3",
+    size: "2.3 GB",
+    tags: ["tiny", "fast"],
+    blurb: "Microsoft's tiny-but-clever model — runs on almost anything.",
     pulls: 1,
   },
 ];
@@ -341,7 +413,11 @@ api.post("/models/pull", async (req, res) => {
     res.write("data: {\"status\":\"done\"}\n\n");
     res.end();
   } catch (err) {
-    res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+    res.write(
+      `event: error\ndata: ${JSON.stringify({
+        error: `Can't reach ${baseUrl} — start Ollama (or your local server), then pull again. (${err.message})`,
+      })}\n\n`,
+    );
     res.end();
   }
 });

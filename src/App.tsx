@@ -651,6 +651,8 @@ export default function App() {
         onSelect={(id) => setSettings((s) => ({ ...s, model: id }))}
         onRefresh={refreshModels}
         loading={loadingModels}
+        baseUrl={settings.provider.baseUrl}
+        onOpenCatalog={() => setShowCatalog(true)}
       />
       <ModelCatalogModal
         open={showCatalog}
