@@ -70,12 +70,13 @@ jobs:
         if: matrix.args != '--target x86_64-apple-darwin' && !matrix.android
         run: npm run sidecar
 
-      # Desktop bundle step rebuilds the frontend via beforeBuildCommand;
-      # build:desktop re-stages the sidecar, which would clobber the x64 one
-      # staged above — so desktop mac-x64 bundles without the extra step.
-      - name: Disable frontend rebuild (x64 mac)
+      # build:desktop would re-stage the arm64 sidecar over the x64 one
+      # staged above, so plain "npm run build" is substituted to produce
+      # dist/ without touching the sidecar.
+      - name: Rebuild frontend only (x64 mac)
         if: matrix.args == '--target x86_64-apple-darwin'
-        run: sed -i '' 's/"beforeBuildCommand": "npm run build:desktop"/"beforeBuildCommand": ""/' src-tauri/tauri.conf.json
+        run: |
+          sed -i '' 's/"beforeBuildCommand": "npm run build:desktop"/"beforeBuildCommand": "npm run build"/' src-tauri/tauri.conf.json
         shell: bash
 
       # Android thin-client APK: UI ships in the app, AI runs on your
