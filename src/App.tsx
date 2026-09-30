@@ -186,7 +186,7 @@ export default function App() {
     if (!activeSession || !activeGame || busy) return false;
     // Pure engine games need no model at all; LLM-voiced games fall back to
     // deterministic engine text when no model is picked (server handles it).
-    if (!settings.model) {
+    if (!settings.model && activeGame.needsLlm) {
       setNotice("💡 Tip: pick a model for Talia's voice — the game itself works without one ♡");
     }
     const sessionId = activeSession.id;
@@ -252,11 +252,38 @@ export default function App() {
           },
           onDone: (status) => {
             if (status && status !== "playing") {
+              // Round over: the server removed the session. Keep the HUD as a
+              // scoreboard but hand normal chatting back to the room.
+              setGamesByChat((prev) => ({
+                ...prev,
+                [sessionId]: { ...prev[sessionId], finished: true },
+              }));
               setNotice(status === "won" ? "🏆 You won! Hit “Play again” for a rematch ♡" : "GG! Rematch? 🎮");
             }
           },
           onError: (msg) => {
             if (stopFlag.current) return;
+            if (/game-session-gone/i.test(msg)) {
+              // Server restarted or session TTL'd out — clear quietly.
+              setGamesByChat((prev) => ({
+                ...prev,
+                [sessionId]: { ...prev[sessionId], finished: true },
+              }));
+              setNotice("That game session expired — start it again from the Arcade 🎮");
+              setSessions((prev) =>
+                prev.map((s) =>
+                  s.id === sessionId
+                    ? {
+                        ...s,
+                        messages: s.messages.map((m) =>
+                          m.id === assistantId && m.content.trim() === "" ? null : m,
+                        ).filter(Boolean) as ChatMessage[],
+                      }
+                    : s,
+                ),
+              );
+              return;
+            }
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId
@@ -264,7 +291,10 @@ export default function App() {
                       ...s,
                       messages: s.messages.map((m) =>
                         m.id === assistantId
-                          ? { ...m, content: `🎮 Game hiccup: ${msg}\n\nTry again in a moment!` }
+                          ? {
+                              ...m,
+                              content: (m.content ? m.content + "\n\n" : "") + `🎮 Game hiccup: ${msg}\n\nTry again in a moment!`,
+                            }
                           : m,
                       ),
                     }
@@ -343,9 +373,10 @@ export default function App() {
     const text = rawText.trim();
     if (busy || !activeSession) return false;
     // While a game is live, chat text is a game move (regeneration would
-    // desync the server-authoritative game state, so it's a no-op).
-    if (activeGame && !regen) return gameMoveSend(text);
-    if (activeGame && regen) return false;
+    // desync the server-authoritative game state, so it's a no-op). Once the
+    // round is finished, the HUD stays as a scoreboard and chat is normal.
+    if (activeGame && !regen && !activeGame.finished) return gameMoveSend(text);
+    if (activeGame && regen && !activeGame.finished) return false;
     if (!regen && !text) return false;
     if (!settings.model) {
       setNotice("Pick a model first — tap the ✨ button up top so Talia knows who she is today ♡");
@@ -859,6 +890,13 @@ export default function App() {
           busy={busy}
           researchEnabled={settings.ragEnabled}
           onToggleResearch={() => setSettings((s) => ({ ...s, ragEnabled: !s.ragEnabled }))}
+          placeholder={
+            activeGame
+              ? activeGame.finished
+                ? "Game over — or start a new one from the Arcade 🎮"
+                : `Type your move for ${activeGame.emoji} ${activeGame.name}…`
+              : undefined
+          }
         />
 
         <AnimatePresence>

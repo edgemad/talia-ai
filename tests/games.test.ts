@@ -4,6 +4,7 @@ import {
   ENGINES,
   getGame,
   listGames,
+  packEngine,
   validatePack,
   sanitizeGameState,
 } from "../server/games.mjs";
@@ -14,6 +15,7 @@ type Engine = {
   step: (state: Record<string, any>, input: string) => StepResult;
   intro: (state: Record<string, any>) => string;
   fallback?: (state: Record<string, any>) => string;
+  parseLlmReply?: (state: Record<string, any>, reply: string) => Record<string, any> | null;
 };
 
 const asEngine = (e: unknown) => e as Engine;
@@ -283,6 +285,26 @@ describe("twenty questions", () => {
     expect(r.state.status).toBe("won");
     expect(r.needsLlm).toBeFalsy();
   });
+  it("sends ordinary 'is it…?' questions to the oracle, not the guess judge (regression)", () => {
+    let state = engine.seed();
+    const r = engine.step(state, "Is it alive?");
+    expect(r.needsLlm).toBe(true);
+    expect(r.state.questionsLeft).toBe(19);
+    expect(String(r.reply ?? "")).not.toContain("Not a");
+  });
+  it("wins deterministically when a question names the secret", () => {
+    let state = engine.seed();
+    const r = engine.step(state, `is it ${state.secret}?`);
+    expect(r.state.status).toBe("won");
+    expect(r.needsLlm).toBeFalsy();
+  });
+  it("resolves the oracle's WIN: marker into a real game-over", () => {
+    let state = engine.seed();
+    state = engine.step(state, "Is it fluffy?").state; // consume one question
+    const parsed = engine.parseLlmReply?.(state, "WIN: you got it, it was a mystery!");
+    expect(parsed?.status).toBe("won");
+    expect(engine.parseLlmReply?.(state, "No, keep guessing!")).toBeNull();
+  });
   it("reveals on give up", () => {
     let state = engine.seed();
     const r = engine.step(state, "give up");
@@ -304,6 +326,29 @@ describe("story chain", () => {
     }
     expect(state.status).toBe("won");
     expect(state.turn).toBeGreaterThan(8);
+  });
+});
+
+describe("llm-rounds pack prompts", () => {
+  it("uses the pack's own system prompt with round substitution", () => {
+    const eng = packEngine({
+      id: "prompt-pack",
+      engine: "llm-rounds",
+      name: "Prompt Pack",
+      emoji: "🎭",
+      tagline: "test pack",
+      category: "Pack",
+      ages: "6+",
+      data: { system: "You are HOST-{{round}} of {{maxRounds}}. Be silly.", maxRounds: 6 },
+    });
+    expect(eng).toBeTruthy();
+    let state = eng!.seed();
+    const p = { name: "Prompt Pack", data: { system: "You are HOST-{{round}} of {{maxRounds}}. Be silly.", maxRounds: 6 } };
+    const sys = eng!.systemPrompt?.(state, p);
+    expect(sys).toContain("HOST-1 of 6");
+    // later round substitutes the current number
+    state = eng!.step(state, "hi").state;
+    expect(eng!.systemPrompt?.(state, p)).toContain("HOST-2 of 6");
   });
 });
 

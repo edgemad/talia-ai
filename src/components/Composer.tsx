@@ -8,6 +8,7 @@ export function Composer({
   busy,
   researchEnabled,
   onToggleResearch,
+  placeholder,
 }: {
   /** Return false to keep the typed text (e.g. no model selected yet). */
   onSend: (text: string) => boolean | void | Promise<boolean | void>;
@@ -15,6 +16,8 @@ export function Composer({
   busy: boolean;
   researchEnabled: boolean;
   onToggleResearch: () => void;
+  /** Overrides the default placeholder, e.g. while a game is live. */
+  placeholder?: string;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -36,7 +39,7 @@ export function Composer({
           <textarea
             ref={inputRef}
             rows={1}
-            placeholder="Say hi to Talia… 🌸"
+            placeholder={placeholder ?? "Say hi to Talia… 🌸"}
             className="max-h-40 flex-1 resize-none bg-transparent px-3 py-2 text-[15px] outline-none"
             style={{ color: "var(--text)" }}
             onKeyDown={(e) => {

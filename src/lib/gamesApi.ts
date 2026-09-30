@@ -36,6 +36,10 @@ export interface ActiveGame {
   name: string;
   emoji: string;
   howTo?: string;
+  /** Whether the game voices replies through the LLM (twenty questions, packs). */
+  needsLlm?: boolean;
+  /** Set once the round ends: chat returns to normal, HUD stays as a scoreboard. */
+  finished?: boolean;
   state: Record<string, unknown>;
 }
 
@@ -114,6 +118,7 @@ export async function startGame(
         name: j.game.name,
         emoji: j.game.emoji,
         howTo: j.game.howTo,
+        needsLlm: !!j.game.needsLlm,
         state: j.state,
       },
     };

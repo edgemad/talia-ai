@@ -641,19 +641,25 @@ const twentyQuestions = {
   step(state, input) {
     if (state.status !== "playing") return { state, reply: "Round finished — start again to play a new secret! 🤔" };
     const t = norm(input);
-    const giveUp = /^(give up|i give up|reveal|tell me|surrender)/.test(t);
-    const guessMatch = /^guess[:\s]+(.+)$/.exec(t) || (state.asked > 0 && /^(is it|it is)\s+(.+)$/.exec(t) ? [null, t] : null);
-    const guessText = giveUp ? "give up" : guessMatch ? (guessMatch[2] ?? guessMatch[1]) : null;
-    if (guessText) {
-      if (guessText === "give up") {
-        return { state: lost({ ...state }), reply: `✨ It was a ${state.secret.toUpperCase()}! ${state.hint}. Want to try another one?` };
-      }
-      const g = norm(guessText);
+    if (/^(give up|i give up|reveal|tell me|surrender)/.test(t)) {
+      return { state: lost({ ...state }), reply: `✨ It was a ${state.secret.toUpperCase()}! ${state.hint}. Want to try another one?` };
+    }
+    // Explicit guesses only: "guess: an elephant". Ordinary questions (even
+    // "is it …?") go to the oracle — treating them as guesses broke the game.
+    const explicit = /^guess[:\s]+(.+)$/.exec(t);
+    if (explicit) {
+      const g = norm(explicit[1]);
       const hit = state.aliases.some((a) => g === norm(a)) || g === norm(state.secret) || g.includes(norm(state.secret));
       if (hit) {
         return { state: won({ ...state }, { score: 20 - state.questionsLeft }), reply: `🎉 YES — it was a ${state.secret.toUpperCase()}! You guessed it with ${state.questionsLeft} questions to spare! Play again?` };
       }
-      return { state, reply: `❌ Not a ${guessText.trim().slice(0, 30)}! ${state.questionsLeft} questions left — keep asking!` };
+      return { state, reply: `❌ Not a ${explicit[1].trim().slice(0, 30)}! ${state.questionsLeft} questions left — keep asking!` };
+    }
+    // A question that names the secret IS a correct guess — settle it here so
+    // wins work even fully offline without the oracle model.
+    const namesSecret = state.aliases.some((a) => t.includes(norm(a))) || t.includes(norm(state.secret));
+    if (namesSecret) {
+      return { state: won({ ...state }, { score: 20 - state.questionsLeft }), reply: `🎉 YES — you got it, it was a ${state.secret.toUpperCase()}! Solved with ${state.questionsLeft} questions to spare! Play again?` };
     }
     if (state.questionsLeft <= 0) {
       return { state: lost({ ...state }), reply: `⏰ That was your last question! It was a ${state.secret.toUpperCase()} — ${state.hint}. Rematch?` };
@@ -665,6 +671,14 @@ const twentyQuestions = {
       prompt: input,
       done: false,
     };
+  },
+  parseLlmReply(state, reply) {
+    // The oracle is instructed to prefix "WIN:" when the kid basically
+    // guessed the secret — turn that into a real game-over state.
+    if (/\bwin\s*:/i.test(String(reply))) {
+      return won({ ...state }, { score: 20 - state.questionsLeft });
+    }
+    return null;
   },
   systemPrompt: (s) =>
     `You are playing Twenty Questions with a kid. You secretly chose: "${s.secret}" (${s.hint}).\n` +
@@ -1001,7 +1015,7 @@ export function startGameSession({ gameId, chatId, game, state }) {
     id,
     gameId,
     chatId: chatId || null,
-    game: { id: game.id, name: game.name, emoji: game.emoji || "🎮", needsLlm: !!game.needsLlm },
+    game: { id: game.id, name: game.name, emoji: game.emoji || "🎮", needsLlm: !!game.needsLlm, data: game.data ?? null },
     engine: game.engineImpl,
     state,
     history: [],

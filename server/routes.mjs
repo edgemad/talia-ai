@@ -301,6 +301,13 @@ api.post("/games/:sid/move", async (req, res) => {
     }
     const full = acc.trim();
     if (!full) throw new Error("empty reply");
+    // Engines may resolve the move from the model's own words (e.g. the
+    // twenty-questions oracle prefixes "WIN:" on a correct guess).
+    const parsed = session.engine.parseLlmReply?.(session.state, full);
+    if (parsed) {
+      session.state = parsed;
+      send({ type: "state", state: sanitizeGameState(session.state) });
+    }
     return finishWith(full);
   } catch {
     // Reliability guarantee: a game move NEVER dead-ends — fall back to the

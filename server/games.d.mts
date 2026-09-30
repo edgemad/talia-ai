@@ -11,6 +11,8 @@ export interface GameDef {
   builtin: boolean;
   installed: boolean;
   source: "builtin" | "pack";
+  /** Pack data (quiz banks, word lists, prompt packs) — built-ins have none. */
+  data?: Record<string, unknown> | null;
 }
 
 export interface CataloguePackDef {
@@ -40,6 +42,8 @@ export interface GameEngine {
   intro?: (state: Record<string, unknown>) => string;
   systemPrompt?: (state: Record<string, unknown>, game: unknown) => string;
   fallback?: (state: Record<string, unknown>, game?: unknown) => string;
+  /** Resolve game-over from the model's own words (e.g. oracle "WIN:"). */
+  parseLlmReply?: (state: Record<string, unknown>, reply: string) => Record<string, unknown> | null;
 }
 
 export declare const BUILTIN_GAMES: GameDef[];
