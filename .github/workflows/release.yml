@@ -1,0 +1,91 @@
+name: Desktop installers
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - os: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - os: ubuntu-22.04
+            args: "--bundles appimage,deb,rpm"
+          - os: windows-latest
+            args: "--bundles nsis,msi"
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node >= 26 is required for `node --build-sea` (sidecar packaging).
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ startsWith(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      # macOS x64 builds: the SEA sidecar must be an x64 binary. Download the
+      # x64 Node build as the SEA base and enable Rosetta to run/smoke-test it
+      # on the arm64 runner.
+      - name: Build x64 sidecar (for x64 mac target)
+        if: matrix.args == '--target x86_64-apple-darwin'
+        run: |
+          softwareupdate --install-rosetta --agree-to-license || true
+          curl -fsSL https://nodejs.org/dist/v26.10.0/node-v26.10.0-darwin-x64.tar.gz -o /tmp/node-x64.tar.gz
+          mkdir -p /tmp/node-x64 && tar -xzf /tmp/node-x64.tar.gz -C /tmp/node-x64 --strip-components=1
+          TALIA_SEA_NODE=/tmp/node-x64/bin/node npm run sidecar
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Talia AI v__VERSION__"
+          releaseBody: "Cozy local LLM chat companion — cross-chat memory, research, media studio. All data stays on your machine."
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  ci-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Rust check
+        working-directory: src-tauri
+        run: cargo check

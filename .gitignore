@@ -1,6 +1,14 @@
 node_modules
 dist
+build
 .env
 .env.*
 *.log
 .DS_Store
+
+# Tauri / Rust
+src-tauri/target
+src-tauri/gen/schemas
+# staged sidecar binaries (rebuilt by `npm run sidecar` / CI)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep

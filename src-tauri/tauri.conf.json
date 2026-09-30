@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Talia AI",
+  "version": "0.2.0",
+  "identifier": "ai.talia.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5183",
+    "beforeBuildCommand": "npm run build:desktop",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Talia AI",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/talia-server"],
+    "resources": { "../dist/": "dist/" },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Productivity",
+    "publisher": "Talia",
+    "copyright": "© 2026 Talia · MIT License",
+    "shortDescription": "Cozy local LLM chat companion",
+    "longDescription": "Talia AI is an adorably cozy chat companion for Ollama and any OpenAI-compatible local server — with cross-chat memory, live research, a media studio, and a liquid-glass pastel UI. All data stays on your machine.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
+  }
+}

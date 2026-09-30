@@ -49,6 +49,32 @@ Talia adapts to your connection instead of breaking:
 - The status pill shows both facts: internet up? model up? — e.g.
   *"Offline — chats still work, web research paused"* vs *"Model offline — start Ollama"*.
 
+## 📦 Desktop installers
+
+Talia ships as a real native app (Tauri 2) — no terminal required. The Express
+API travels inside the app as a self-contained Node SEA sidecar, so the whole
+workstation (UI + server + memory) is one tidy bundle:
+
+| Platform | Get it | Notes |
+|---|---|---|
+| 🍎 macOS (Apple Silicon / Intel) | `Talia AI_<v>_aarch64.dmg` / `_x64.dmg` | drag to Applications; unsigned builds: right-click → Open the first time |
+| 🪟 Windows | `Talia AI_<v>_x64-setup.exe` (NSIS, per-user) or `.msi` | no admin needed for the NSIS installer |
+| 🐧 Linux | `.AppImage` / `.deb` / `.rpm` | AppImage = download, chmod +x, run |
+
+Download from the [releases page](https://github.com/your-name/talia-ai/releases)
+(attach installers by pushing a `v*` tag — CI builds all four platforms), or
+build locally:
+
+```bash
+npm install
+npm run tauri build        # → src-tauri/target/release/bundle/<platform>/
+```
+
+Under the hood: the app spawns its bundled `talia-server` sidecar on
+`localhost:8787` and opens a webview pointed at it. Your data stays where it
+always was — `~/.talia-ai/`. Dev with hot reload: `npm run dev:server` +
+`npm run tauri dev`.
+
 ## 🚀 Quick start
 
 ```bash
@@ -154,6 +180,9 @@ React + Vite + Tailwind + Framer Motion  ←→  Express (8787)
 npm test          # 24 tests: embeddings, memory, research, proxy, export
 npm run typecheck
 npm run build     # emits dist/ + self-contained dist/talia-preview.html
+npm run sidecar   # bundle server → standalone SEA binary (self-tested)
+npm run icons     # regenerate app icons from the mascot
+npm run tauri build  # native installers (macOS dmg / Windows nsis,msi / Linux deb,rpm,appimage)
 ```
 
 ## 🛠️ Troubleshooting

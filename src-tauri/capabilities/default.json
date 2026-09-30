@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window. Talia's UI talks to the sidecar API over plain HTTP, so only core defaults are needed.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

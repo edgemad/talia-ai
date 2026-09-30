@@ -18,7 +18,10 @@ app.use("/api", api);
 
 // Standalone mode: serve the built frontend from dist/ when present,
 // so `npm run server` alone is the whole app.
-const distDir = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+// Inside the desktop sidecar (Node SEA), import.meta.url is unavailable,
+// so the Tauri launcher sets TALIA_DIST_DIR explicitly.
+const here = typeof import.meta.url === "string" ? fileURLToPath(import.meta.url) : ".";
+const distDir = process.env.TALIA_DIST_DIR || join(dirname(here), "..", "dist");
 if (existsSync(distDir)) {
   app.use(express.static(distDir));
   app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(join(distDir, "index.html")));
@@ -215,5 +218,30 @@ const PORT = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 8787;
 server.listen(PORT, () => {
   console.log(`🌸 Talia server listening on http://localhost:${PORT}`);
 });
+
+// Built-in self test (used by the sidecar build smoke test and CI):
+// boot, hit our own /api/health, print SELFTEST OK, exit 0.
+if (process.env.TALIA_SELFTEST === "1") {
+  const timer = setTimeout(() => {
+    console.error("SELFTEST FAIL: health check timed out");
+    process.exit(1);
+  }, 15_000);
+  fetch(`http://localhost:${PORT}/api/health`)
+    .then(async (r) => {
+      const body = await r.json().catch(() => ({}));
+      if (r.ok && body?.ok) {
+        console.log("SELFTEST OK");
+        clearTimeout(timer);
+        shutdown("SELFTEST");
+      } else {
+        console.error(`SELFTEST FAIL: HTTP ${r.status}`);
+        process.exit(1);
+      }
+    })
+    .catch((err) => {
+      console.error(`SELFTEST FAIL: ${err.message}`);
+      process.exit(1);
+    });
+}
 
 export { app, server };
