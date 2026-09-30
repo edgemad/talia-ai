@@ -54,9 +54,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      # macOS x64 builds: the SEA sidecar must be an x64 binary. Download the
-      # x64 Node build as the SEA base and enable Rosetta to run/smoke-test it
-      # on the arm64 runner.
+      # The sidecar must exist before any Rust build: tauri.conf.json lists it
+      # under externalBin, and tauri-build/cargo check verify it up front.
+      # macOS x64 builds additionally need an x64 SEA base (Rosetta runs it
+      # on the arm64 runner for the smoke test).
       - name: Build x64 sidecar (for x64 mac target)
         if: matrix.args == '--target x86_64-apple-darwin'
         run: |
@@ -64,6 +65,18 @@ jobs:
           curl -fsSL https://nodejs.org/dist/v26.10.0/node-v26.10.0-darwin-x64.tar.gz -o /tmp/node-x64.tar.gz
           mkdir -p /tmp/node-x64 && tar -xzf /tmp/node-x64.tar.gz -C /tmp/node-x64 --strip-components=1
           TALIA_SEA_NODE=/tmp/node-x64/bin/node npm run sidecar
+
+      - name: Build sidecar (host target)
+        if: matrix.args != '--target x86_64-apple-darwin' && !matrix.android
+        run: npm run sidecar
+
+      # Desktop bundle step rebuilds the frontend via beforeBuildCommand;
+      # build:desktop re-stages the sidecar, which would clobber the x64 one
+      # staged above — so desktop mac-x64 bundles without the extra step.
+      - name: Disable frontend rebuild (x64 mac)
+        if: matrix.args == '--target x86_64-apple-darwin'
+        run: sed -i '' 's/"beforeBuildCommand": "npm run build:desktop"/"beforeBuildCommand": ""/' src-tauri/tauri.conf.json
+        shell: bash
 
       # Android thin-client APK: UI ships in the app, AI runs on your
       # computer (the desktop app or `npm run server`) — connect over WiFi.
@@ -87,7 +100,21 @@ jobs:
         working-directory: src-tauri
         run: |
           cargo install tauri-cli --version '^2' --locked
-          cargo tauri android init || true
+          cargo tauri android init
+
+      - name: Point Android build at a stub sidecar (client-only build)
+        if: matrix.android
+        run: |
+          # The Android client bundles no sidecar; tauri.conf.json still
+          # declares externalBin, so stage a placeholder that satisfies the
+          # bundler (it is never shipped or executed on Android).
+          node -e "
+            const fs=require('fs');
+            const p='src-tauri/tauri.conf.json';
+            const c=JSON.parse(fs.readFileSync(p,'utf8'));
+            delete c.bundle.externalBin;
+            fs.writeFileSync(p, JSON.stringify(c,null,2));
+          "
 
       - name: Build Android APK
         if: matrix.android
@@ -135,6 +162,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm run sidecar
       - name: Rust check
         working-directory: src-tauri
         run: cargo check
