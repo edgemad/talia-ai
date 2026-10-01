@@ -139,7 +139,7 @@ pub fn run() {
                 }
 
                 // Give the API a moment to come up before navigating.
-                let deadline = Instant::now() + Duration::from_secs(15);
+                let deadline = Instant::now() + Duration::from_secs(30);
                 while !api_up() && Instant::now() < deadline {
                     std::thread::sleep(Duration::from_millis(100));
                 }
@@ -149,6 +149,33 @@ pub fn run() {
                     let _ = window.navigate(
                         tauri::Url::parse(&format!("http://localhost:{API_PORT}/")).unwrap(),
                     );
+                } else {
+                    // The sidecar sometimes loses the first-launch race (first
+                    // read, antivirus scan…). Don't strand the window on the
+                    // bundled shell: retry in the background and navigate the
+                    // moment the server answers. Re-launching the app is safe
+                    // (the sidecar step is skipped while the port is up), and
+                    // covers the case where the sidecar crashed on boot.
+                    let handle = app.handle().clone();
+                    std::thread::spawn(move || {
+                        for attempt in 1..=12u32 {
+                            if api_up() {
+                                if let Some(w) = handle.get_webview_window("main") {
+                                    let _ = w.navigate(
+                                        tauri::Url::parse(&format!("http://localhost:{API_PORT}/")).unwrap(),
+                                    );
+                                }
+                                return;
+                            }
+                            if attempt % 4 == 0 {
+                                let _ = std::process::Command::new("open")
+                                    .arg("-a")
+                                    .arg("Talia AI")
+                                    .output();
+                            }
+                            std::thread::sleep(std::time::Duration::from_secs(5));
+                        }
+                    });
                 }
                 // If the API never came up, the window stays on the bundled
                 // offline shell (dist/index.html), which shows the offline banner.

@@ -7,6 +7,7 @@ import { StatusPill } from "./StatusPill";
 export function HeaderBar({
   online,
   netOnline,
+  serverReachable = true,
   model,
   ragActive,
   themeId,
@@ -21,6 +22,8 @@ export function HeaderBar({
 }: {
   online: boolean;
   netOnline: boolean;
+  /** Whether Talia's own server (localhost:8787) answers. */
+  serverReachable?: boolean;
   model: string;
   ragActive: boolean;
   themeId: string;
@@ -58,7 +61,7 @@ export function HeaderBar({
       </div>
 
       <div className="ml-1 hidden lg:block">
-        <StatusPill online={online} netOnline={netOnline} />
+        <StatusPill online={online} netOnline={netOnline} serverReachable={serverReachable} />
       </div>
 
       {ragActive && (

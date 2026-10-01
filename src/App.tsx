@@ -78,6 +78,12 @@ export default function App() {
     return existing[existing.length - 1]?.id ?? sessions[0]?.id ?? "active";
   });
   const [online, setOnline] = useState(false);
+  // Is TALIA'S SERVER answering? Distinct from internet access — the app runs
+  // fully offline. When the shell UI (tauri://) misses the server at launch,
+  // this flips true the moment it's reachable.
+  const [serverUp, setServerUp] = useState<boolean>(() =>
+    typeof location === "undefined" ? true : location.origin.startsWith("http"),
+  );
   const [models, setModels] = useState<DiscoveredModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -155,6 +161,33 @@ export default function App() {
     const t = setInterval(pollHealth, 8000);
     return () => clearInterval(t);
   }, [pollHealth]);
+
+  // Self-healing: if the window is stranded on the bundled shell because the
+  // sidecar lost the launch race, detect Talia's server the moment it answers
+  // and move the whole app to it.
+  useEffect(() => {
+    if (serverUp) return;
+    let alive = true;
+    const probe = async () => {
+      try {
+        const r = await fetch(apiUrl("/api/health"), { signal: AbortSignal.timeout(2500) });
+        const j = await r.json().catch(() => null);
+        if (alive && j?.ok) {
+          setServerUp(true);
+          // Reload from the real origin so relative API calls just work.
+          location.href = apiUrl("/");
+        }
+      } catch {
+        /* keep probing */
+      }
+    };
+    probe();
+    const t = setInterval(probe, 2500);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [serverUp]);
 
   // Model discovery
   const refreshModels = useCallback(async () => {
@@ -795,6 +828,7 @@ export default function App() {
         <HeaderBar
           online={online}
           netOnline={netOnline}
+          serverReachable={serverUp}
           model={settings.model}
           ragActive={settings.ragEnabled}
           themeId={themeId}

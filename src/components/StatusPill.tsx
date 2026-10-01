@@ -4,16 +4,21 @@ import { Mascot } from "./Mascot";
 export function StatusPill({
   online,
   netOnline,
+  serverReachable = true,
 }: {
   online: boolean;
   netOnline: boolean;
+  /** Whether Talia's own server answers (independent of the internet). */
+  serverReachable?: boolean;
 }) {
-  const dot = netOnline ? (online ? "bg-ok" : "bg-warn") : "bg-warn";
-  const label = !netOnline
-    ? "Offline — chats still work, web research paused"
-    : online
-      ? "Talia is awake & connected"
-      : "Model offline — start Ollama";
+  const dot = !serverReachable ? "bg-warn" : netOnline ? (online ? "bg-ok" : "bg-warn") : "bg-warn";
+  const label = !serverReachable
+    ? "Waking Talia's server…"
+    : !netOnline
+      ? "Internet off — chats & local AI still work"
+      : online
+        ? "Talia is awake & connected"
+        : "Pick a brain — built-in AI needs one tap";
 
   return (
     <div className="glass-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-bold" style={{ color: "var(--text-soft)" }}>
