@@ -5,6 +5,7 @@ import { Drawer } from "./ui";
 import { Mascot } from "./Mascot";
 import { DEFAULT_SYSTEM_PROMPT } from "../lib/constants";
 import { PROVIDER_PRESETS, guessPreset, presetById } from "../lib/providers";
+import { LocalAiPanel } from "./LocalAiPanel";
 import type { CustomModelPreset, Settings } from "../types";
 
 function Toggle({
@@ -155,6 +156,14 @@ export function SettingsDrawer({
             onChange={(v) => onChange({ ...settings, ttsEnabled: v })}
             label="🔊 Speak replies aloud"
             hint="Reads answers with your local TTS voice (Piper or compatible)."
+          />
+        </section>
+
+        {/* Talia's own engine — zero drivers, one tap */}
+        <section>
+          <SectionTitle color="var(--accent-2)">🧠 Built-in AI — no setup, no drivers</SectionTitle>
+          <LocalAiPanel
+            onUseThisEngine={() => setProvider({ baseUrl: "http://127.0.0.1:11435/v1", providerId: "builtin" })}
           />
         </section>
 

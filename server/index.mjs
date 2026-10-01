@@ -7,6 +7,8 @@ import { dirname, join } from "node:path";
 import { buildProviderRequest, validateProviderConfig } from "./provider.mjs";
 import { encodeSSE } from "./sse.mjs";
 import { api } from "./routes.mjs";
+import { runtimeApi } from "./runtimeRoutes.mjs";
+import { ensureAutoStart, stopRuntime } from "./runtime.mjs";
 import { flushNow } from "./store.mjs";
 
 const app = express();
@@ -15,6 +17,9 @@ app.use(express.json({ limit: "10mb" }));
 
 // v2 feature API (sessions, memory, research, media, catalog)
 app.use("/api", api);
+
+// Built-in local AI engine + update checks (no drivers, zero setup)
+app.use("/api/runtime", runtimeApi);
 
 // Standalone mode: serve the built frontend from dist/ when present,
 // so `npm run server` alone is the whole app.
@@ -205,6 +210,7 @@ server.requestTimeout = 0; // allow long-running SSE streams
 async function shutdown(signal) {
   console.log(`\n🌸 ${signal} — saving Talia's memories…`);
   try {
+    stopRuntime();
     await flushNow();
   } finally {
     server.close(() => process.exit(0));
@@ -217,6 +223,8 @@ const parsedPort = Number(process.env.PORT);
 const PORT = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 8787;
 server.listen(PORT, () => {
   console.log(`🌸 Talia server listening on http://localhost:${PORT}`);
+  // Bring Talia's own engine up if it was installed and enabled (best effort).
+  if (process.env.TALIA_NO_AUTOSTART !== "1") void ensureAutoStart();
 });
 
 // Built-in self test (used by the sidecar build smoke test and CI):

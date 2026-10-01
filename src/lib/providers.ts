@@ -15,6 +15,15 @@ export interface ProviderPreset {
  */
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
+    id: "builtin",
+    name: "Talia Built-in",
+    baseUrl: "http://127.0.0.1:11435/v1",
+    needsKey: false,
+    hint: "Talia's own engine — zero drivers, one tap to install in Settings → Built-in AI.",
+    free: true,
+    emoji: "🧠",
+  },
+  {
     id: "ollama",
     name: "Ollama",
     baseUrl: "http://localhost:11434",
@@ -134,6 +143,9 @@ export function guessPreset(baseUrl: string): ProviderPreset | null {
   if (exact) return exact;
   if (raw.includes("localhost:11434") || raw.includes("127.0.0.1:11434")) {
     return presetById("ollama");
+  }
+  if (raw.includes(":11435") || raw.includes("localhost:11435") || raw.includes("127.0.0.1:11435")) {
+    return presetById("builtin");
   }
   if (raw.includes("localhost:1234")) return presetById("lmstudio");
   if (raw.includes("localhost:1337")) return presetById("jan");

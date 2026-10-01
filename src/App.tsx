@@ -10,6 +10,7 @@ import { SettingsDrawer } from "./components/SettingsDrawer";
 import { MediaStudio } from "./components/MediaStudio";
 import { BotsSkillsModal } from "./components/BotsSkillsModal";
 import { GamesModal } from "./components/GamesModal";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { GameHud } from "./components/GameHud";
 import {
   endGame,
@@ -787,6 +788,8 @@ export default function App() {
           onExport={handleExport}
           busy={busy}
         />
+
+        <UpdateBanner />
 
         {!netOnline && (
           <motion.div
