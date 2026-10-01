@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, SESSIONS_KEY, STORAGE_KEY } from "./constants";
+import { isEnvOffline } from "./appMode";
 import type { ChatSession, Settings } from "../types";
 
 export function loadSettings(): Settings {
@@ -11,9 +12,11 @@ export function loadSettings(): Settings {
       ...parsed,
       provider: { ...DEFAULT_SETTINGS.provider, ...(parsed.provider ?? {}) },
       customModels: Array.isArray(parsed.customModels) ? parsed.customModels : [],
+      // Env/query-forced offline wins over whatever was stored.
+      offline: parsed.offline === true || isEnvOffline(),
     };
   } catch {
-    return structuredClone(DEFAULT_SETTINGS);
+    return { ...structuredClone(DEFAULT_SETTINGS), offline: isEnvOffline() };
   }
 }
 

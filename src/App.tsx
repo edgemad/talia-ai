@@ -142,6 +142,19 @@ export default function App() {
 
   // Persist
   useEffect(() => saveSettings(settings), [settings]);
+
+  // Offline Mode lives in localStorage (UI) and in Talia's server store —
+  // keep the server side in step so its gates honor the toggle.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(apiUrl("/api/settings"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offline: settings.offline }),
+      signal: controller.signal,
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [settings.offline]);
   useEffect(() => {
     if (activeSession) saveSessions(sessions);
   }, [sessions, activeSession]);

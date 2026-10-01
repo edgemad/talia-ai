@@ -5,6 +5,7 @@
 // same commit as package.json.
 import { APP_VERSION } from "./version.mjs";
 import { isNewer, latestRuntimeRelease, targetFor, RUNTIME_BASE_URL } from "./runtime.mjs";
+import { isOffline, offlineError } from "./settings.mjs";
 
 const APP_REPO = "edgemad/talia-ai";
 
@@ -51,6 +52,17 @@ export async function checkUpdates({ force = false } = {}) {
     updateAvailable: false,
     error: null,
   };
+
+  // Answer without touching the network — and without caching, so turning
+  // Offline Mode off re-checks immediately.
+  if (await isOffline()) {
+    return {
+      app: { ...app, error: offlineError("Checking for updates") },
+      runtime: { ...runtime, error: offlineError("Checking for engine updates") },
+      checkedAt: new Date().toISOString(),
+      offline: true,
+    };
+  }
 
   try {
     const rel = await fetchJson(`https://api.github.com/repos/${APP_REPO}/releases/latest`);

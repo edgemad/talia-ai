@@ -10,6 +10,7 @@ import { api } from "./routes.mjs";
 import { runtimeApi } from "./runtimeRoutes.mjs";
 import { ensureAutoStart, stopRuntime } from "./runtime.mjs";
 import { flushNow } from "./store.mjs";
+import { isOffline, isLocalUrl, offlineError } from "./settings.mjs";
 
 const app = express();
 app.use(cors());
@@ -73,6 +74,9 @@ app.get("/api/provider/health", async (req, res) => {
     baseUrl: String(req.query.baseUrl || "http://localhost:11434"),
     apiKey: req.query.apiKey ? String(req.query.apiKey) : undefined,
   };
+  if ((await isOffline()) && !isLocalUrl(cfg.baseUrl)) {
+    return res.json({ online: false, status: 0, error: offlineError("Checking this provider") });
+  }
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
@@ -95,6 +99,9 @@ app.get("/api/provider/models", async (req, res) => {
   const headers = {
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   };
+  if ((await isOffline()) && !isLocalUrl(baseUrl)) {
+    return res.status(403).json({ ok: false, error: offlineError("Listing this provider's models") });
+  }
   const candidates = [
     `${baseUrl}/v1/models`,
     `${baseUrl}/api/tags`,
@@ -136,6 +143,9 @@ app.post("/api/chat", async (req, res) => {
   const { provider, messages, model } = req.body ?? {};
   if (!validateProviderConfig(provider)) {
     return res.status(400).json({ error: "Invalid provider configuration." });
+  }
+  if ((await isOffline()) && !isLocalUrl(provider?.baseUrl ?? "")) {
+    return res.status(403).json({ error: offlineError("Chatting with this provider") });
   }
   if (!Array.isArray(messages) || messages.length === 0 || !model) {
     return res.status(400).json({ error: "messages[] and model are required." });

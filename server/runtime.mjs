@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { dataDir, readCollection, writeCollection } from "./store.mjs";
+import { isOffline, offlineError } from "./settings.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -305,6 +306,9 @@ export async function installRuntime({ force = false, onProgress } = {}) {
   if (!target) {
     return { ok: false, error: `Talia's built-in engine doesn't have a build for ${process.platform}/${process.arch} yet — use Ollama or a cloud provider on this device.` };
   }
+  if (await isOffline()) {
+    return { ok: false, error: offlineError("Installing Talia's engine") };
+  }
   const installed = serverBinary();
   const cfg = await config();
   try {
@@ -410,6 +414,9 @@ export async function downloadModel(id, onProgress) {
   if (!m) return { ok: false, error: "Unknown model." };
   const dest = modelPath(id);
   if (!dest) return { ok: false, error: "Bad model path." };
+  if (await isOffline()) {
+    return { ok: false, error: offlineError("Downloading models") };
+  }
   try {
     if (existsSync(dest) && statSync(dest).size > m.sizeBytes * 0.8) {
       return { ok: true, alreadyDownloaded: true };

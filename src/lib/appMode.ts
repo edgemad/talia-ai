@@ -42,3 +42,12 @@ export function apiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) return path;
   return `${getApiBase()}${path}`;
 }
+
+/** The server can be forced offline via env (TALIA_OFFLINE=1) — kiosk setups. */
+export function isEnvOffline(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get("offline") === "1";
+  } catch {
+    return false;
+  }
+}

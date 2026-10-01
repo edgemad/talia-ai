@@ -97,6 +97,21 @@ export function SettingsDrawer({
   return (
     <Drawer open={open} onClose={onClose} title="Talia's settings" icon={<Mascot size={26} theme={themeId} />}>
       <div className="flex flex-col gap-6 text-sm">
+        {/* Network: Online / Offline Mode */}
+        <section className="flex flex-col gap-2.5">
+          <SectionTitle color="var(--accent-2)">📡 Network</SectionTitle>
+          <Toggle
+            checked={settings.offline}
+            onChange={(v) => onChange({ ...settings, offline: v })}
+            label={settings.offline ? "✈️ Offline Mode is on" : "🌍 Online — Talia may use the internet"}
+            hint={
+              settings.offline
+                ? "Everything on this machine keeps working: chats, images, memory, games. Update checks, research, cloud providers and downloads are paused."
+                : "Talia checks for updates, researches the web and may download engines or models when needed. Local AI always stays local."
+            }
+          />
+        </section>
+
         {/* Look & feel */}
         <section>
           <SectionTitle>🎨 Look & feel</SectionTitle>

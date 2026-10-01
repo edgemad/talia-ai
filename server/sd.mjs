@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { dataDir, readCollection, writeCollection } from "./store.mjs";
+import { isOffline, offlineError } from "./settings.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -266,6 +267,9 @@ export async function installSdRuntime({ force = false, onProgress } = {}) {
   if (!target.asset) {
     return { ok: false, error: `${target.label} has no image engine build yet (upstream ships none) — point Media Studio at Automatic1111 or an OpenAI-style image server instead.` };
   }
+  if (await isOffline()) {
+    return { ok: false, error: offlineError("Installing the image engine") };
+  }
   const installed = sdBinary();
   const cfg = await config();
   try {
@@ -315,6 +319,9 @@ export async function downloadSdModel(id, onProgress) {
   if (!m) return { ok: false, error: "Unknown image model." };
   const dest = sdModelPath(id);
   if (!dest) return { ok: false, error: "Bad model path." };
+  if (await isOffline()) {
+    return { ok: false, error: offlineError("Downloading models") };
+  }
   try {
     if (existsSync(dest) && statSync(dest).size > m.sizeBytes * 0.8) {
       return { ok: true, alreadyDownloaded: true };

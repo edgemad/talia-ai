@@ -84,6 +84,12 @@ interface SdStatus {
   recommendedModel: string;
 }
 
+/** Live probe result for an external image server (via /api/media/health). */
+interface ImageProbe {
+  image: boolean;
+  imageKind: string | null;
+}
+
 type Tab = "image" | "audio" | "video";
 
 /** Quality presets for image generation (steps + CFG + resolution). */
@@ -179,6 +185,11 @@ export function MediaStudio({
   const [sdNotice, setSdNotice] = useState<string | null>(null);
   const [showEngine, setShowEngine] = useState(false);
 
+  // "auto" = Talia's built-in engine; "external" = your own image server.
+  const [imageMode, setImageMode] = useState<"auto" | "external">("auto");
+  const [probe, setProbe] = useState<ImageProbe | null>(null);
+  const [probing, setProbing] = useState(false);
+
   const refreshSd = useCallback(async () => {
     try {
       const r = await fetch(apiUrl("/api/runtime/sd/status"));
@@ -188,6 +199,32 @@ export function MediaStudio({
       /* offline */
     }
   }, []);
+
+  // Ask the server whether an image backend answers at the given URL —
+  // works for Automatic1111 (/sdapi/...) and OpenAI-style (/v1/...) servers.
+  const probeExternal = useCallback(async (url: string): Promise<ImageProbe> => {
+    setProbing(true);
+    try {
+      const r = await fetch(apiUrl(`/api/media/health?baseUrl=${encodeURIComponent(url)}`));
+      const j = await r.json();
+      const p: ImageProbe = { image: !!j?.image, imageKind: j?.imageKind ?? null };
+      setProbe(p);
+      return p;
+    } catch {
+      const p: ImageProbe = { image: false, imageKind: null };
+      setProbe(p);
+      return p;
+    } finally {
+      setProbing(false);
+    }
+  }, []);
+
+  // Probe whenever the external-server mode or URL changes.
+  useEffect(() => {
+    if (!open) return;
+    if (imageMode === "external") void probeExternal(imageBackend || "http://127.0.0.1:7860");
+    else setProbe(null);
+  }, [open, imageMode, imageBackend, probeExternal]);
 
   useEffect(() => {
     if (!open) return;
@@ -232,7 +269,7 @@ export function MediaStudio({
   }, [sd, preferredModel]);
 
   const sdReady = !!sd?.installed && !!sd?.models.some((m) => m.downloaded);
-  const needsSdSetup = tab === "image" && sd?.supported && !sdReady;
+  const needsSdSetup = tab === "image" && imageMode === "auto" && sd?.supported && !sdReady;
   const q = IMAGE_QUALITY[quality];
   const steps = stepsOverride ?? q.steps;
   const cfg = cfgOverride ?? q.cfg;
@@ -261,8 +298,8 @@ export function MediaStudio({
               height,
               hires: q.hires,
               modelId: preferredModel || undefined,
-              useLocal: !imageBackend,
-              baseUrl: imageBackend || undefined,
+              useLocal: imageMode === "auto",
+              baseUrl: imageMode === "external" ? imageBackend || "http://127.0.0.1:7860" : undefined,
             })
           : tab === "video"
             ? await generateVideo({
@@ -324,6 +361,51 @@ export function MediaStudio({
 
       {tab === "image" && (
         <div className="mt-3">
+          <div className="mb-1.5 flex gap-1.5">
+            <button
+              onClick={() => setImageMode("auto")}
+              className={`flex-1 rounded-full px-2 py-1 text-[10.5px] font-extrabold transition ${
+                imageMode === "auto" ? "glass-strong" : "glass-pill hover:brightness-105"
+              }`}
+              style={{ color: imageMode === "auto" ? "var(--text)" : "var(--text-faint)" }}
+            >
+              🎨 Talia's engine {sdReady ? "· ready" : ""}
+            </button>
+            <button
+              onClick={() => setImageMode("external")}
+              className={`flex-1 rounded-full px-2 py-1 text-[10.5px] font-extrabold transition ${
+                imageMode === "external" ? "glass-strong" : "glass-pill hover:brightness-105"
+              }`}
+              style={{ color: imageMode === "external" ? "var(--text)" : "var(--text-faint)" }}
+            >
+              🌐 My image server
+            </button>
+          </div>
+          {imageMode === "external" && (
+            <div className="mb-1.5 flex items-center gap-2 rounded-xl px-2.5 py-1.5" style={{ background: "var(--surface-strong)" }}>
+              <input
+                value={imageBackend}
+                onChange={(e) => setImageBackend(e.target.value)}
+                placeholder="http://127.0.0.1:7860 (Automatic1111)"
+                className="min-w-0 flex-1 bg-transparent font-mono text-[11px] outline-none"
+                style={{ color: "var(--text)" }}
+              />
+              {probing ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <span
+                  className="rounded-full px-2 py-0.5 text-[9.5px] font-extrabold uppercase"
+                  style={
+                    probe?.image
+                      ? { background: "rgba(74,222,128,0.15)", color: "var(--ok, #4ade80)" }
+                      : { background: "rgba(251,113,133,0.12)", color: "var(--warn)" }
+                  }
+                >
+                  {probe?.image ? `live · ${probe.imageKind === "openai-style" ? "OAI-style" : "A1111"}` : "no answer"}
+                </span>
+              )}
+            </div>
+          )}
           <div className="flex gap-1.5">
             {(Object.keys(IMAGE_QUALITY) as QualityKey[]).map((k) => (
               <button
@@ -601,7 +683,7 @@ export function MediaStudio({
               Install Talia's image engine — one tap, zero drivers
             </button>
           )}
-          {sdReady && !imageBackend && tab === "image" && (
+          {sdReady && imageMode === "auto" && tab === "image" && (
             <button
               onClick={() => {
                 setResult(null);
@@ -638,10 +720,10 @@ export function MediaStudio({
       )}
 
       <p className="mt-3 text-center text-[11px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
-        Images paint with <strong style={{ color: "var(--text-soft)" }}>Talia's own engine</strong> — one tap
-        below, no drivers, nothing else to install. Prefer Automatic1111 (<code className="font-mono">:7860</code>)
-        or an OpenAI-style server? Set it in advanced controls. Speech needs Piper (<code className="font-mono">TALIA_TTS_URL</code>),
-        video needs ComfyUI — all optional, all local.
+        Images paint with <strong style={{ color: "var(--text-soft)" }}>Talia's own engine</strong> — no drivers,
+        nothing else to install. Running Automatic1111, ComfyUI or an OpenAI-style server? Switch to
+        <strong style={{ color: "var(--text-soft)" }}> My image server</strong> up top. Speech needs Piper
+        (<code className="font-mono">TALIA_TTS_URL</code>), video needs ComfyUI — all optional, all local.
       </p>
     </Modal>
   );

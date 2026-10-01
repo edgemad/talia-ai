@@ -10,6 +10,7 @@ import {
 } from "./memory.mjs";
 import { research, extractiveAnswer } from "./research.mjs";
 import { generateImage, generateVideo, synthesizeSpeech, mediaHealth } from "./media.mjs";
+import { getSettings, setOffline, isOffline, isLocalUrl, offlineError } from "./settings.mjs";
 import { readCollection, writeCollection } from "./store.mjs";
 import {
   BUILTIN_BOTS,
@@ -77,6 +78,9 @@ api.post("/skills/:id/run", async (req, res) => {
     return res.status(400).json({ ok: false, error: "Invalid provider configuration." });
   }
   if (!model) return res.status(400).json({ ok: false, error: "model required" });
+  if ((await isOffline()) && !isLocalUrl(provider?.baseUrl ?? "")) {
+    return res.status(403).json({ ok: false, error: offlineError("Running skills with this provider") });
+  }
 
   const prompt = skill.build({ text: String(text || ""), context: String(context || "") });
   const messages = [
@@ -252,7 +256,8 @@ api.post("/games/:sid/move", async (req, res) => {
   }
 
   // LLM-voiced move (twenty questions, story chain, prompt packs).
-  if (!validateProviderConfig(provider) || !model) {
+  const providerOffline = (await isOffline()) && !!provider?.baseUrl && !isLocalUrl(provider.baseUrl);
+  if (!validateProviderConfig(provider) || !model || providerOffline) {
     const reply = result.reply ?? result.fallback ?? session.engine.fallback?.(session.state, session.game) ?? "Your turn!";
     send({ type: "engine", text: reply });
     return finishWith(reply);
@@ -395,6 +400,7 @@ api.delete("/memory", async (_req, res) => {
 api.post("/research", async (req, res) => {
   const query = String(req.body?.query || "").trim();
   if (!query) return res.status(400).json({ ok: false, error: "query required" });
+  if (await isOffline()) return res.status(403).json({ ok: false, error: offlineError("Web research") });
   try {
     const out = await research(query, { maxSources: Number(req.body?.maxSources) || 5 });
     res.json({ ok: true, ...out, quickAnswer: extractiveAnswer(query, out.sources) });
@@ -404,8 +410,22 @@ api.post("/research", async (req, res) => {
 });
 
 // ---------- Media -----------------------------------------------------------
-api.get("/media/health", async (_req, res) => {
-  res.json({ ok: true, ...(await mediaHealth()) });
+api.get("/media/health", async (req, res) => {
+  res.json({ ok: true, ...(await mediaHealth({ baseUrl: req.query.baseUrl })) });
+});
+
+// ---------- App-wide settings (Offline Mode) ---------------------------------
+api.get("/settings", async (_req, res) => {
+  res.json({ ok: true, ...(await getSettings()) });
+});
+
+api.post("/settings", async (req, res) => {
+  const before = await getSettings();
+  if (before.offlineLocked) {
+    return res.status(403).json({ ok: false, error: "TALIA_OFFLINE=1 forces Offline Mode; it can only be changed in the environment.", ...before });
+  }
+  const s = await setOffline(!!req.body?.offline);
+  res.json({ ok: true, ...s });
 });
 
 api.post("/media/image", async (req, res) => {
@@ -573,6 +593,9 @@ api.get("/models/catalog", (_req, res) => {
 api.post("/models/pull", async (req, res) => {
   const { baseUrl, model } = req.body || {};
   if (!baseUrl || !model) return res.status(400).json({ ok: false, error: "baseUrl and model required" });
+  if ((await isOffline()) && !isLocalUrl(baseUrl)) {
+    return res.status(403).json({ ok: false, error: offlineError("Model pulls") });
+  }
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",

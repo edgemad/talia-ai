@@ -10,6 +10,7 @@
 // message instead of a crash.
 
 import { generateLocalImage, sdStatus } from "./sd.mjs";
+import { isOffline, isLocalUrl, offlineError } from "./settings.mjs";
 
 const DEFAULTS = {
   image: process.env.TALIA_SD_URL || "http://127.0.0.1:7860",
@@ -41,6 +42,7 @@ export async function generateImage(
   { prompt, negative, steps, cfg, width, height, hires, useLocal, modelId, baseUrl: explicitBase },
   baseUrl = DEFAULTS.image,
 ) {
+  const offline = await isOffline();
   // 1) Talia's own built-in engine first (zero setup), unless the user asked
   //    for a specific external backend in the Studio's advanced controls.
   if (useLocal !== false && !explicitBase) {
@@ -50,7 +52,7 @@ export async function generateImage(
       if (r.ok) return r;
       // Local engine failed but exists → surface its error only if there is
       // no external backend to fall back to; otherwise try A1111 below.
-      const externalUp = await fetch(`${String(baseUrl).replace(/\/+$/, "")}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) })
+      const externalUp = !(offline && !isLocalUrl(baseUrl)) && await fetch(`${String(baseUrl).replace(/\/+$/, "")}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) })
         .then((r) => r.ok)
         .catch(() => false);
       if (!externalUp) return r;
@@ -58,6 +60,10 @@ export async function generateImage(
   }
 
   const base = String(explicitBase || baseUrl).replace(/\/+$/, "");
+  // Offline Mode allows only on-this-machine servers (loopback / LAN names).
+  if (offline && !isLocalUrl(base)) {
+    return { ok: false, error: offlineError(`Using the image server at ${base}`) };
+  }
   // Try Automatic1111 first, fall back to OpenAI-style endpoint
   try {
     const payload = {
@@ -121,6 +127,9 @@ export async function synthesizeSpeech({ text, voice, ttsUrl }, baseUrl = DEFAUL
   if (!target) {
     return { ok: false, error: "No TTS server configured. Run Piper (see README) or set TALIA_TTS_URL." };
   }
+  if ((await isOffline()) && !isLocalUrl(target)) {
+    return { ok: false, error: offlineError("Speech synthesis") };
+  }
   try {
     const r = await fetch(`${target.replace(/\/+$/, "")}`, {
       method: "POST",
@@ -156,6 +165,9 @@ export async function generateVideo(
     return { ok: false, error: "No ComfyUI URL configured. Start ComfyUI (see README) or set TALIA_COMFY_URL." };
   }
   const base = baseUrl.replace(/\/+$/, "");
+  if ((await isOffline()) && !isLocalUrl(base)) {
+    return { ok: false, error: offlineError("Video rendering") };
+  }
   const safeFps = Math.min(24, Math.max(6, Math.round(Number(fps) || 12)));
   const p = structuredClone(VIDEO_PROMPT_TEMPLATE);
   p["6"].inputs.text = prompt;
@@ -216,15 +228,33 @@ export async function generateVideo(
 }
 
 // ---------- Health --------------------------------------------------------
-export async function mediaHealth() {
+export async function mediaHealth({ baseUrl } = {}) {
   const sd = await sdStatus();
   const builtinImage = sd.installed && sd.models.some((m) => m.downloaded);
-  const out = { image: false, builtinImage, tts: !!DEFAULTS.tts, video: false };
+  const probeBase = String(baseUrl || DEFAULTS.image).replace(/\/+$/, "");
+  const out = { image: false, imageKind: null, builtinImage, tts: !!DEFAULTS.tts, video: false };
+  // Online/Offline toggle in the Studio probes an arbitrary URL through this
+  // endpoint (the webview can't always reach the backend directly).
+  if ((await isOffline()) && !isLocalUrl(probeBase)) return out;
   try {
-    const r = await fetch(`${DEFAULTS.image.replace(/\/+$/, "")}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) });
-    out.image = r.ok;
+    const r = await fetch(`${probeBase}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) });
+    if (r.ok) {
+      out.image = true;
+      out.imageKind = "automatic1111";
+    }
   } catch {
-    /* offline */
+    /* not an A1111 server */
+  }
+  if (!out.image) {
+    try {
+      const r = await fetch(`${probeBase}/v1/models`, { signal: AbortSignal.timeout(1500) });
+      if (r.ok) {
+        out.image = true;
+        out.imageKind = "openai-style";
+      }
+    } catch {
+      /* not an OpenAI-style server either */
+    }
   }
   try {
     if (DEFAULTS.comfy) {

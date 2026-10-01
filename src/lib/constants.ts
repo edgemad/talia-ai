@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ragEnabled: false,
   autoRemember: true,
   ttsEnabled: false,
+  offline: false,
 };
 
 export const RECOMMENDED_MODELS = [

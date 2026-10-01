@@ -26,6 +26,8 @@ export interface Settings {
   autoRemember: boolean;
   /** Speak Talia's replies aloud via local TTS */
   ttsEnabled: boolean;
+  /** Airplane mode: Talia never touches the internet; localhost keeps working */
+  offline: boolean;
 }
 
 export type Role = "user" | "assistant" | "system";
