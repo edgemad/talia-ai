@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Globe, Send, Square } from "lucide-react";
 
@@ -20,10 +20,12 @@ export function Composer({
   placeholder?: string;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [burst, setBurst] = useState(0);
 
   const submit = async () => {
     const text = inputRef.current?.value.trim();
     if (!text || busy) return;
+    setBurst((b) => b + 1);
     const accepted = await onSend(text);
     if (accepted !== false && inputRef.current) inputRef.current.value = "";
   };
@@ -79,12 +81,23 @@ export function Composer({
             onClick={submit}
             whileTap={{ scale: 0.85 }}
             whileHover={{ scale: 1.08, rotate: -4 }}
-            className="flex h-12 w-12 items-center justify-center rounded-full text-white shadow-plush"
+            className="relative flex h-12 w-12 items-center justify-center rounded-full text-white shadow-plush"
             style={{ background: "var(--accent-grad)" }}
             aria-label="Send message"
             title="Send"
           >
             <Send size={18} />
+            {/* Spark ring on every send ✨ */}
+            {burst > 0 && (
+              <motion.span
+                key={burst}
+                initial={{ scale: 0.6, opacity: 0.85 }}
+                animate={{ scale: 1.9, opacity: 0 }}
+                transition={{ duration: 0.55, ease: "easeOut" }}
+                className="pointer-events-none absolute inset-0 rounded-full"
+                style={{ border: "2.5px solid var(--accent)" }}
+              />
+            )}
           </motion.button>
         )}
       </div>

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { RotateCcw, X } from "lucide-react";
 import type { ActiveGame } from "../lib/gamesApi";
@@ -92,6 +93,35 @@ function scoreChips(state: Record<string, unknown>): { label: string; value: str
   return chips.slice(0, 5);
 }
 
+// 🎉 Confetti when the kid wins — one burst, then it's gone.
+function WinConfetti() {
+  const bits = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, i) => ({
+        x: (i - 9) * 22 + (i % 2 ? 8 : -8),
+        r: (i % 2 ? 1 : -1) * (160 + (i % 5) * 70),
+        c: ["#f472b6", "#fbbf24", "#34d399", "#38bdf8", "#c084fc"][i % 5],
+        d: (i % 4) * 0.06,
+        e: 1.1 + (i % 3) * 0.25,
+      })),
+    [],
+  );
+  return (
+    <div className="pointer-events-none absolute -top-2 left-1/2 z-10">
+      {bits.map((b, i) => (
+        <motion.span
+          key={i}
+          initial={{ x: 0, y: 0, opacity: 1, rotate: 0 }}
+          animate={{ x: b.x, y: 86, rotate: b.r, opacity: 0 }}
+          transition={{ duration: b.e, delay: b.d, ease: "easeOut" }}
+          className="absolute block h-2 w-2 rounded-[2px]"
+          style={{ background: b.c }}
+        />
+      ))}
+    </div>
+  );
+}
+
 const STATUS_STYLE: Record<string, { label: string; bg: string }> = {
   won: { label: "You win! 🏆", bg: "color-mix(in srgb, #22c55e 22%, transparent)" },
   lost: { label: "Talia wins 😄", bg: "color-mix(in srgb, #f59e0b 22%, transparent)" },
@@ -126,17 +156,22 @@ export function GameHud({
       animate={{ opacity: 1, y: 0 }}
       className="glass-strong mx-auto mb-1 w-[min(94%,42rem)] rounded-3xl px-4 py-3"
     >
-      <div className="flex items-center gap-2">
+      <div className="relative flex items-center gap-2">
+        {status === "won" && <WinConfetti />}
         <span className="text-xl">{game.emoji}</span>
         <span className="text-[13px] font-extrabold" style={{ color: "var(--text)" }}>
           {game.name}
         </span>
-        <span
+        <motion.span
+          key={status}
+          initial={status === "won" ? { scale: 0.5, rotate: -8 } : false}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 420, damping: 16 }}
           className="rounded-full px-2 py-0.5 text-[10px] font-extrabold"
           style={{ background: st.bg, color: "var(--text)" }}
         >
           {st.label}
-        </span>
+        </motion.span>
         <div className="flex-1" />
         {status !== "playing" && (
           <button

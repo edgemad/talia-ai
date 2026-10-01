@@ -11,6 +11,7 @@ import { MediaStudio } from "./components/MediaStudio";
 import { BotsSkillsModal } from "./components/BotsSkillsModal";
 import { GamesModal } from "./components/GamesModal";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { LiveWallpaper } from "./components/LiveWallpaper";
 import { GameHud } from "./components/GameHud";
 import {
   endGame,
@@ -756,6 +757,9 @@ export default function App() {
 
   return (
     <div className="flex h-full">
+      {/* Theme wallpaper drifts behind everything, blurred by the glass UI */}
+      <LiveWallpaper theme={themeId} />
+
       <SessionSidebar
         open={sidebarOpen}
         sessions={sessions}
