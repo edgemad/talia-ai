@@ -29,6 +29,17 @@ export declare function parseVersion(v: string): [number, number, number] | null
 export declare function isNewer(candidate: string, current: string): boolean;
 export declare function modelUrl(m: GGUFModel): string;
 export declare function modelPath(id: string): string | null;
+export declare function recommendedBrain(ramGB: number): string;
+export declare function deviceLabel(platform: string, arch: string, ramGB: number): string;
+export declare function quickstartPlan(st: {
+  installed: boolean;
+  running: boolean;
+  models?: { downloaded: boolean }[];
+}): { steps: ("engine" | "model" | "start")[]; total: number };
+export declare function quickstart(opts?: {
+  onProgress?: (p: Record<string, unknown>) => void;
+}): Promise<{ ok: boolean; model?: string; baseUrl?: string; installedNow?: boolean; error?: string }>;
+export declare function uninstallRuntime(): Promise<{ ok: boolean; hadEngine: boolean; hadModels?: boolean; error?: string }>;
 export declare function latestRuntimeRelease(): Promise<{ tag: string; assets: RuntimeAsset[] }>;
 export declare function installRuntime(opts?: {
   force?: boolean;

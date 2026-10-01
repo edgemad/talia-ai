@@ -21,6 +21,11 @@ app.use("/api", api);
 // Built-in local AI engine + update checks (no drivers, zero setup)
 app.use("/api/runtime", runtimeApi);
 
+// Unknown API paths answer JSON, never the SPA fallback.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ ok: false, error: "Unknown API path" });
+});
+
 // Standalone mode: serve the built frontend from dist/ when present,
 // so `npm run server` alone is the whole app.
 // Inside the desktop sidecar (Node SEA), import.meta.url is unavailable,

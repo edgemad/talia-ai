@@ -1,6 +1,6 @@
 // 🧠 Built-in AI panel — Talia's own engine, zero drivers required.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Play, RefreshCw, Square, Trash2, Download, CircleCheck } from "lucide-react";
+import { Loader2, Play, RefreshCw, Sparkles, Square, Trash2, Download, CircleCheck } from "lucide-react";
 import { apiUrl } from "../lib/appMode";
 
 interface RuntimeModel {
@@ -25,6 +25,9 @@ interface RuntimeStatus {
   running: boolean;
   baseUrl: string;
   selectedModel: string | null;
+  device: string;
+  ramGB: number;
+  recommendedBrain: string;
   models: RuntimeModel[];
   lastExit: { code: number | null; signal: string | null; at: number } | null;
   recentLogs: string[];
@@ -113,15 +116,29 @@ export function LocalAiPanel({ onUseThisEngine }: { onUseThisEngine?: () => void
     };
   }, [refresh]);
 
-  const installEngine = async () => {
-    setBusy("engine");
-    setProgress({ msg: "Preparing…", pct: 0 });
-    const r = await streamRuntime("/api/runtime/install", {}, (evt) =>
+  /** One tap: engine + the brain that fits this machine + start + verified. */
+  const quickstart = async () => {
+    setBusy("quickstart");
+    setProgress({ msg: "Preparing…", pct: null });
+    const r = await streamRuntime("/api/runtime/quickstart", {}, (evt) =>
       setProgress({ msg: evt.message ?? "Working…", pct: evt.pct ?? null }),
     );
     setBusy(null);
     setProgress(null);
-    setNotice(r.error ? `Engine install failed: ${r.error}` : "Engine ready — no drivers needed ✓");
+    setNotice(
+      r.error
+        ? `Setup paused: ${r.error} — press the button again anytime`
+        : "Talia's own AI is ready — no drivers, nothing else to install ♡",
+    );
+    void refresh();
+  };
+
+  const removeEverything = async () => {
+    if (!window.confirm("Remove Talia's engine and all downloaded brains? Chat history and memories stay.")) return;
+    setBusy("uninstall");
+    await fetch(apiUrl("/api/runtime/uninstall"), { method: "POST" });
+    setBusy(null);
+    setNotice("Engine and brains removed — reinstall anytime with one tap.");
     void refresh();
   };
 
@@ -172,6 +189,7 @@ export function LocalAiPanel({ onUseThisEngine }: { onUseThisEngine?: () => void
 
   const engineReady = status.installed;
   const downloadedModels = status.models.filter((m) => m.downloaded);
+  const needsSetup = !engineReady || downloadedModels.length === 0;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -186,7 +204,7 @@ export function LocalAiPanel({ onUseThisEngine }: { onUseThisEngine?: () => void
           </div>
           <div className="truncate text-[11px]" style={{ color: "var(--text-faint)" }}>
             {status.supported
-              ? `${status.targetLabel} — ${status.accelerator} · no drivers, no GPU required`
+              ? `${status.device} — ${status.accelerator} · no drivers, no GPU required`
               : `${status.targetLabel} — no engine build yet; use Ollama or a cloud provider here`}
             {status.version ? ` · v${status.version}` : ""}
           </div>
@@ -215,15 +233,15 @@ export function LocalAiPanel({ onUseThisEngine }: { onUseThisEngine?: () => void
         )}
       </div>
 
-      {!engineReady && status.supported && (
+      {needsSetup && status.supported && (
         <button
-          onClick={() => void installEngine()}
+          onClick={() => void quickstart()}
           disabled={busy !== null}
-          className="flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-xs font-extrabold text-white shadow-plush disabled:opacity-50"
+          className="animate-glow flex items-center justify-center gap-2 rounded-full px-4 py-3 text-xs font-extrabold text-white shadow-plush disabled:opacity-50"
           style={{ background: "var(--accent-grad)" }}
         >
-          {busy === "engine" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-          Install Talia's engine (~20 MB) — one tap, zero drivers
+          {busy === "quickstart" ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+          Set up Talia's AI — one tap, zero drivers
         </button>
       )}
 
@@ -255,10 +273,15 @@ export function LocalAiPanel({ onUseThisEngine }: { onUseThisEngine?: () => void
                 opacity: m.downloaded || busy === null ? 1 : 0.85,
               }}
             >
-              <span className="text-base">{m.recommended ? "⭐" : "🧩"}</span>
+              <span className="text-base">{m.id === status.recommendedBrain || m.recommended ? "⭐" : "🧩"}</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] font-extrabold" style={{ color: "var(--text)" }}>
                   {m.name} <span className="font-bold" style={{ color: "var(--text-faint)" }}>· {m.size}</span>
+                  {m.id === status.recommendedBrain && (
+                    <span className="ml-1 text-[9.5px] font-extrabold" style={{ color: "var(--accent)" }}>
+                      fits your machine
+                    </span>
+                  )}
                 </div>
                 <div className="truncate text-[10.5px]" style={{ color: "var(--text-faint)" }}>
                   {m.blurb}
@@ -315,6 +338,17 @@ export function LocalAiPanel({ onUseThisEngine }: { onUseThisEngine?: () => void
           style={{ background: "var(--surface-strong)", color: "var(--text-soft)" }}
         >
           <RefreshCw size={11} /> Use this engine for chat (localhost:11435)
+        </button>
+      )}
+
+      {engineReady && !status.running && (
+        <button
+          onClick={() => void removeEverything()}
+          disabled={busy !== null}
+          className="self-start text-[10px] font-bold underline decoration-dotted transition hover:text-rose-400"
+          style={{ color: "var(--text-faint)" }}
+        >
+          {busy === "uninstall" ? "Removing…" : "Remove engine & brains from this device"}
         </button>
       )}
 

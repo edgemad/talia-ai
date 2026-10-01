@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { targetFor, assetFor, isNewer, parseVersion, GGUF_MODELS, modelUrl } from "../server/runtime.mjs";
+import {
+  targetFor,
+  assetFor,
+  isNewer,
+  parseVersion,
+  GGUF_MODELS,
+  modelUrl,
+  recommendedBrain,
+  deviceLabel,
+  quickstartPlan,
+} from "../server/runtime.mjs";
 import { pickAppAsset } from "../server/updates.mjs";
 
 type Asset = { name: string; browser_download_url?: string };
@@ -72,6 +82,41 @@ describe("app update asset picker", () => {
     expect(pickAppAsset(assets, "linux", "x64")?.name).toBe("Talia.AI_0.4.0_amd64.AppImage");
     expect(pickAppAsset(assets, "android", "arm64")?.name).toBe("Talia.AI_0.4.0_aarch64.apk");
     expect(pickAppAsset([], "darwin", "arm64")).toBeNull();
+  });
+});
+
+describe("hardware-aware brain picker (ODS-style tiering)", () => {
+  it("recommends brighter brains on bigger machines", () => {
+    expect(recommendedBrain(16)).toBe("qwen2.5-3b");
+    expect(recommendedBrain(8)).toBe("qwen2.5-3b"); // 8 GB is exactly the 3B comfort zone
+    expect(recommendedBrain(6)).toBe("qwen2.5-1.5b");
+    expect(recommendedBrain(2)).toBe("qwen2.5-0.5b");
+    expect(recommendedBrain(1)).toBe("qwen2.5-0.5b"); // never returns nothing
+  });
+
+  it("always picks something the RAM constraint allows", () => {
+    for (let ram = 1; ram <= 64; ram++) {
+      const pick = recommendedBrain(ram);
+      expect(GGUF_MODELS.some((m) => m.id === pick)).toBe(true);
+    }
+  });
+
+  it("describes the device in friendly words", () => {
+    expect(deviceLabel("darwin", "arm64", 16)).toContain("Apple Silicon");
+    expect(deviceLabel("win32", "x64", 32)).toMatch(/Windows PC · x64 · 32 GB/);
+    expect(deviceLabel("linux", "x64", 8)).toMatch(/Linux box/);
+  });
+});
+
+describe("quickstart planning", () => {
+  const base = { installed: true, running: true, models: [{ downloaded: true }] };
+  it("needs nothing when everything is ready", () => {
+    expect(quickstartPlan(base).steps).toEqual([]);
+  });
+  it("orders engine, model, start", () => {
+    expect(quickstartPlan({ installed: false, running: false, models: [] }).steps).toEqual(["engine", "model", "start"]);
+    expect(quickstartPlan({ ...base, running: false }).steps).toEqual(["start"]);
+    expect(quickstartPlan({ ...base, models: [{ downloaded: false }] }).steps).toEqual(["model"]);
   });
 });
 

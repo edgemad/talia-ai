@@ -9,7 +9,13 @@ import {
   deleteModel,
   startRuntime,
   stopRuntime,
+  quickstart,
+  quickstartPlan,
+  uninstallRuntime,
+  recommendedBrain,
+  deviceLabel,
 } from "./runtime.mjs";
+import os from "node:os";
 import { checkUpdates } from "./updates.mjs";
 
 export const runtimeApi = Router();
@@ -38,6 +44,31 @@ runtimeApi.get("/provider", async (_req, res) => {
   // Convenience for the client: the endpoint Talia's own engine serves.
   const status = await runtimeStatus();
   res.json({ ok: true, baseUrl: RUNTIME_BASE_URL, running: status.running, model: status.selectedModel });
+});
+
+// What would a one-tap setup do right now, and which brain fits this machine?
+runtimeApi.get("/quickstart-plan", async (_req, res) => {
+  const status = await runtimeStatus();
+  const ramGB = Math.round(os.totalmem() / 1024 ** 3);
+  res.json({
+    ok: true,
+    ...quickstartPlan(status),
+    recommendedBrain: recommendedBrain(ramGB),
+    device: deviceLabel(process.platform, process.arch, ramGB),
+  });
+});
+
+// One tap: engine + right-sized brain + start + verified. Safe to re-press.
+runtimeApi.post("/quickstart", async (req, res) => {
+  sseHead(res);
+  const result = await quickstart({ onProgress: (p) => send(res, p) });
+  send(res, { phase: result.ok ? "complete" : "error", ...result });
+  res.end();
+});
+
+// Remove the engine and every downloaded brain — one folder was the whole story.
+runtimeApi.post("/uninstall", async (_req, res) => {
+  res.json(await uninstallRuntime());
 });
 
 // ---------- install / update the engine ---------------------------------------

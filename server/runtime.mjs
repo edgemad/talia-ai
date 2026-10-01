@@ -12,6 +12,7 @@
 import { createWriteStream, existsSync, mkdirSync, chmodSync, readdirSync, statSync, rmSync, renameSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { spawn } from "node:child_process";
+import os from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
@@ -106,6 +107,33 @@ export const GGUF_MODELS = [
 
 export function modelUrl(m) {
   return `https://huggingface.co/${m.repo}/resolve/main/${m.file}?download=true`;
+}
+
+// ---------- hardware-aware brain picker (inspired by ODS tiering) --------------
+// Minimum RAM (GB) each brain is comfortable in, model + KV cache headroom.
+const RAM_NEEDS_GB = {
+  "qwen2.5-3b": 8,
+  "llama-3.2-3b": 8,
+  "qwen2.5-1.5b": 4,
+  "qwen2.5-0.5b": 2,
+};
+
+/** Brightest brain that fits the machine's memory envelope. Pure + tested. */
+export function recommendedBrain(ramGB) {
+  const fits = GGUF_MODELS.filter((m) => ramGB >= (RAM_NEEDS_GB[m.id] ?? 99));
+  if (fits.length === 0) return GGUF_MODELS[0].id; // featherweight fallback
+  const order = ["qwen2.5-3b", "llama-3.2-3b", "qwen2.5-1.5b", "qwen2.5-0.5b"];
+  for (const id of order) {
+    if (fits.some((m) => m.id === id)) return id;
+  }
+  return GGUF_MODELS[0].id;
+}
+
+/** Friendly one-line description of this machine, for the UI. */
+export function deviceLabel(platform, arch, ramGB) {
+  const osName = platform === "darwin" ? "Mac" : platform === "win32" ? "Windows PC" : platform === "linux" ? "Linux box" : platform;
+  const chip = platform === "darwin" && arch === "arm64" ? "Apple Silicon" : arch === "arm64" ? "ARM" : arch === "x64" ? "x64" : arch;
+  return `${osName} · ${chip} · ${ramGB} GB memory`;
 }
 
 export function modelPath(id) {
@@ -312,6 +340,66 @@ export async function installRuntime({ force = false, onProgress } = {}) {
   }
 }
 
+// ---------- one-tap quickstart (chatting in ~2 minutes, ODS-style) --------------
+/** Pure decision core: what does the quickstart need to do next? */
+export function quickstartPlan(st) {
+  const steps = [];
+  if (!st.installed) steps.push("engine");
+  const haveBrain = (st.models ?? []).some((m) => m.downloaded);
+  if (!haveBrain) steps.push("model");
+  if (!st.running) steps.push("start");
+  return { steps, total: steps.length };
+}
+
+/**
+ * Everything in one tap: install engine → download the brain that fits this
+ * machine → start the server → verify a real completion. Each step is
+ * skipped when already done, so it is safe to press again anytime.
+ */
+export async function quickstart({ onProgress } = {}) {
+  const status = await runtimeStatus();
+  const plan = quickstartPlan(status);
+  const brain = recommendedBrain(os.totalmem() / 1024 ** 3);
+  try {
+    if (plan.steps.includes("engine")) {
+      onProgress?.({ phase: "quickstart", message: "Step 1/3 — installing the engine (no drivers needed)…", step: "engine" });
+      const r = await installRuntime({ onProgress });
+      if (!r.ok) return { ok: false, error: r.error };
+    }
+    const fresh = await runtimeStatus();
+    if (quickstartPlan(fresh).steps.includes("model")) {
+      onProgress?.({ phase: "quickstart", message: `Step 2/3 — downloading the ${brain === "qwen2.5-3b" ? "bright" : "starter"} brain for your machine…`, step: "model" });
+      const r = await downloadModel(brain, onProgress);
+      if (!r.ok) return { ok: false, error: r.error };
+    }
+    if (quickstartPlan(await runtimeStatus()).steps.includes("start")) {
+      onProgress?.({ phase: "quickstart", message: "Step 3/3 — waking Talia's engine up…", step: "start" });
+      const r = await startRuntime({ modelId: brain });
+      if (!r.ok) return { ok: false, error: r.error };
+    }
+    onProgress?.({ phase: "quickstart", message: "Checking Talia can really talk…", step: "verify" });
+    const healthy = await fetch(`${RUNTIME_BASE_URL}/models`, { signal: AbortSignal.timeout(5000) }).then((r) => r.ok).catch(() => false);
+    if (!healthy) return { ok: false, error: "Engine is up but not answering — check the runtime logs in Settings." };
+    return { ok: true, model: brain, baseUrl: RUNTIME_BASE_URL, installedNow: plan.total > 0 };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// ---------- uninstall (clean removal, ODS-style) ---------------------------------
+export async function uninstallRuntime() {
+  stopRuntime();
+  const hadEngine = !!serverBinary();
+  try {
+    if (existsSync(RUNTIME_DIR)) rmSync(RUNTIME_DIR, { recursive: true, force: true });
+    if (existsSync(MODELS_DIR)) rmSync(MODELS_DIR, { recursive: true, force: true });
+    writeCollection("runtime", { selectedModel: "qwen2.5-1.5b", autoStart: true, runtimeVersion: null });
+    return { ok: true, hadEngine, hadModels: true };
+  } catch (err) {
+    return { ok: false, error: `Uninstall failed: ${err.message}` };
+  }
+}
+
 // ---------- models ------------------------------------------------------------------
 export async function downloadModel(id, onProgress) {
   const m = GGUF_MODELS.find((x) => x.id === id);
@@ -439,12 +527,16 @@ export async function runtimeStatus() {
   const bin = serverBinary();
   const cfg = await config();
   const running = await apiUp();
+  const ramGB = Math.round(os.totalmem() / 1024 ** 3);
   return {
     platform: process.platform,
     arch: process.arch,
     supported: !!target,
     targetLabel: target?.label ?? `${process.platform}/${process.arch}`,
     accelerator: target?.accelerator ?? null,
+    device: deviceLabel(process.platform, process.arch, ramGB),
+    ramGB,
+    recommendedBrain: recommendedBrain(ramGB),
     installed: !!bin,
     version: bin?.version ?? null,
     running,
