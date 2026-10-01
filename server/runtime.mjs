@@ -376,11 +376,15 @@ export async function quickstart({ onProgress } = {}) {
       onProgress?.({ phase: "quickstart", message: "Step 3/3 — waking Talia's engine up…", step: "start" });
       const r = await startRuntime({ modelId: brain });
       if (!r.ok) return { ok: false, error: r.error };
+      // startRuntime falls back to an already-downloaded brain when the
+      // recommended one isn't on disk — report what is actually running.
+      return { ok: true, model: r.model ?? brain, baseUrl: RUNTIME_BASE_URL, installedNow: plan.total > 0 };
     }
     onProgress?.({ phase: "quickstart", message: "Checking Talia can really talk…", step: "verify" });
     const healthy = await fetch(`${RUNTIME_BASE_URL}/models`, { signal: AbortSignal.timeout(5000) }).then((r) => r.ok).catch(() => false);
     if (!healthy) return { ok: false, error: "Engine is up but not answering — check the runtime logs in Settings." };
-    return { ok: true, model: brain, baseUrl: RUNTIME_BASE_URL, installedNow: plan.total > 0 };
+    const final = await runtimeStatus();
+    return { ok: true, model: final.selectedModel ?? brain, baseUrl: RUNTIME_BASE_URL, installedNow: plan.total > 0 };
   } catch (err) {
     return { ok: false, error: err.message };
   }

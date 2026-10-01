@@ -85,14 +85,13 @@ export function UpdateBanner() {
           Update
         </a>
       ) : (
-        <a
-          href={apiUrl("/api/runtime/status")}
+        <button
           onClick={() => setDismissed(key)}
           className="rounded-full px-2.5 py-1 text-[10.5px] font-extrabold"
           style={{ background: "var(--surface-strong)", color: "var(--text-soft)" }}
         >
-          Update in Settings
-        </a>
+          Update in Settings → Built-in AI
+        </button>
       )}
       <button onClick={dismiss} aria-label="Dismiss" className="rounded-full p-0.5" style={{ color: "var(--text-faint)" }}>
         <X size={12} />
