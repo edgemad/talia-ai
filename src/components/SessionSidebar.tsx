@@ -1,7 +1,64 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Plus, Trash2, Brain, Wand2, Bot, Gamepad2 } from "lucide-react";
 import type { ChatSession } from "../types";
 
+// ---------- resizable width (persisted) ---------------------------------------
+const SS_KEY = "talia-ai:sidebar-width";
+const MIN_W = 208;
+const MAX_W = 400;
+const DEFAULT_W = 260;
+
+function clampW(w: number): number {
+  return Math.min(MAX_W, Math.max(MIN_W, Math.round(w)));
+}
+
+function loadWidth(): number {
+  try {
+    const v = Number(localStorage.getItem(SS_KEY));
+    return Number.isFinite(v) && v >= MIN_W ? clampW(v) : DEFAULT_W;
+  } catch {
+    return DEFAULT_W;
+  }
+}
+
+// ---------- quick-action pills ---------------------------------------------------
+function QuickActions({
+  onOpenMemory,
+  onOpenBots,
+  onOpenStudio,
+  onOpenGames,
+}: {
+  onOpenMemory: () => void;
+  onOpenBots: () => void;
+  onOpenStudio: () => void;
+  onOpenGames: () => void;
+}) {
+  // 2×2 grid at every width — nothing can ever clip, even on a narrow sidebar.
+  const items = [
+    { label: "Memory", icon: <Brain size={12} className="text-accent-2" />, on: onOpenMemory },
+    { label: "Bots", icon: <Bot size={12} className="text-accent" />, on: onOpenBots },
+    { label: "Studio", icon: <Wand2 size={12} className="text-accent" />, on: onOpenStudio },
+    { label: "Games", icon: <Gamepad2 size={12} className="text-accent-2" />, on: onOpenGames },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-1.5">
+      {items.map((it) => (
+        <button
+          key={it.label}
+          onClick={it.on}
+          className="glass-pill flex items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
+          style={{ color: "var(--text-soft)" }}
+        >
+          {it.icon}
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------- sidebar ----------------------------------------------------------------
 export function SessionSidebar({
   open,
   sessions,
@@ -10,8 +67,8 @@ export function SessionSidebar({
   onNew,
   onDelete,
   onOpenMemory,
-  onOpenStudio,
   onOpenBots,
+  onOpenStudio,
   onOpenGames,
 }: {
   open: boolean;
@@ -21,19 +78,57 @@ export function SessionSidebar({
   onNew: () => void;
   onDelete: (id: string) => void;
   onOpenMemory: () => void;
-  onOpenStudio: () => void;
   onOpenBots: () => void;
+  onOpenStudio: () => void;
   onOpenGames: () => void;
 }) {
+  const [width, setWidth] = useState<number>(loadWidth);
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SS_KEY, String(width));
+    } catch {
+      /* session-only */
+    }
+  }, [width]);
+
+  const onDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      setWidth(clampW(e.clientX));
+    };
+    const onUp = () => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [open]);
+
   return (
     <motion.aside
       initial={false}
-      animate={{ width: open ? 260 : 0, opacity: open ? 1 : 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="glass-sheen shrink-0 overflow-hidden"
+      animate={{ width: open ? width : 0, opacity: open ? 1 : 0 }}
+      transition={dragging.current ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 30 }}
+      className="glass-sheen relative shrink-0 overflow-hidden"
       style={{ borderRight: "1px solid var(--border)" }}
     >
-      <div className="flex w-[260px] flex-col gap-2 p-3">
+      <div className="flex flex-col gap-2 p-3" style={{ width }}>
         <motion.button
           whileTap={{ scale: 0.96 }}
           onClick={onNew}
@@ -42,39 +137,15 @@ export function SessionSidebar({
         >
           <Plus size={16} /> New chat
         </motion.button>
-        <div className="flex gap-1.5">
-          <button
-            onClick={onOpenMemory}
-            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
-            style={{ color: "var(--text-soft)" }}
-          >
-            <Brain size={12} className="text-accent-2" /> Memory
-          </button>
-          <button
-            onClick={onOpenBots}
-            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
-            style={{ color: "var(--text-soft)" }}
-          >
-            <Bot size={12} className="text-accent" /> Bots
-          </button>
-          <button
-            onClick={onOpenStudio}
-            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
-            style={{ color: "var(--text-soft)" }}
-          >
-            <Wand2 size={12} className="text-accent" /> Studio
-          </button>
-          <button
-            onClick={onOpenGames}
-            className="glass-pill flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
-            style={{ color: "var(--text-soft)" }}
-          >
-            <Gamepad2 size={12} className="text-accent-2" /> Games
-          </button>
-        </div>
+        <QuickActions
+          onOpenMemory={onOpenMemory}
+          onOpenBots={onOpenBots}
+          onOpenStudio={onOpenStudio}
+          onOpenGames={onOpenGames}
+        />
       </div>
 
-      <div className="w-[260px] overflow-y-auto px-2 pb-3" style={{ maxHeight: "calc(100vh - 130px)" }}>
+      <div className="overflow-y-auto px-2 pb-3" style={{ width, maxHeight: "calc(100vh - 150px)" }}>
         {sessions.length === 0 && (
           <p className="px-3 py-4 text-xs font-semibold" style={{ color: "var(--text-faint)" }}>
             No chats yet — say hi! 🌸
@@ -111,6 +182,18 @@ export function SessionSidebar({
           );
         })}
       </div>
+
+      {/* Drag handle — grab the sidebar's right edge to resize */}
+      {open && (
+        <div
+          onMouseDown={onDown}
+          className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize transition-colors hover:bg-accent/30"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          title="Drag to resize"
+        />
+      )}
     </motion.aside>
   );
 }
