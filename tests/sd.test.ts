@@ -57,6 +57,12 @@ describe("image model catalog", () => {
     expect(SD_MODELS.some((m) => m.recommended)).toBe(true);
   });
 
+  it("pins turbo CFG to 1.0 so any Studio preset clamps correctly", () => {
+    const turbo = SD_MODELS.find((m) => m.id === "sd-turbo");
+    expect(turbo?.cfg.min).toBe(1);
+    expect(turbo?.cfg.max).toBeLessThanOrEqual(1.0); // turbo has no negative branch
+  });
+
   it("recommends the fast turbo brain on big machines and the compact classic on small ones", () => {
     expect(recommendedSdModel(16)).toBe("sd-turbo");
     expect(recommendedSdModel(8)).toBe("sd-turbo");

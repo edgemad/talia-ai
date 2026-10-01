@@ -60,9 +60,9 @@ export const SD_MODELS = [
     repo: "Green-Sky/SD-Turbo-GGUF",
     file: "sd_turbo-f16-q8_0.gguf",
     // Turbo models must run with cfg 1.0 (they have no negative-prompt branch);
-    // the client's CFG/steps prefs are clamped for this brain.
+    // max is pinned to 1.0 so every Studio preset clamps to exactly 1.0.
     steps: { min: 1, max: 8, fallback: 4 },
-    cfg: { min: 1, max: 1.5, fallback: 1.0 },
+    cfg: { min: 1, max: 1.0, fallback: 1.0 },
     recommended: true,
   },
   {
@@ -207,7 +207,7 @@ async function downloadTo(url, dest, onProgress) {
   } finally {
     closeSync(fd);
   }
-  if (dest.endsWith(".gguf") && !head.equals(Buffer.from("GGUFm"))) {
+  if (dest.endsWith(".gguf") && !head.equals(Buffer.from("GGUF"))) {
     rmSync(part, { force: true });
     throw new Error("Downloaded file is not a valid GGUF model — retry the download.");
   }

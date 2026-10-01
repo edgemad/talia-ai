@@ -38,7 +38,7 @@ async function j(url, opts = {}, timeoutMs = 120000) {
 
 // ---------- Images -------------------------------------------------------
 export async function generateImage(
-  { prompt, negative, steps, cfg, width, height, hires, useLocal, baseUrl: explicitBase },
+  { prompt, negative, steps, cfg, width, height, hires, useLocal, modelId, baseUrl: explicitBase },
   baseUrl = DEFAULTS.image,
 ) {
   // 1) Talia's own built-in engine first (zero setup), unless the user asked
@@ -46,7 +46,7 @@ export async function generateImage(
   if (useLocal !== false && !explicitBase) {
     const st = await sdStatus();
     if (st.installed && st.models.some((m) => m.downloaded)) {
-      const r = await generateLocalImage({ prompt, negative, steps, cfg, width, height });
+      const r = await generateLocalImage({ prompt, negative, steps, cfg, width, height, modelId });
       if (r.ok) return r;
       // Local engine failed but exists → surface its error only if there is
       // no external backend to fall back to; otherwise try A1111 below.
