@@ -9,6 +9,8 @@
 // Every helper degrades gracefully: if the service is offline you get a clear
 // message instead of a crash.
 
+import { generateLocalImage, sdStatus } from "./sd.mjs";
+
 const DEFAULTS = {
   image: process.env.TALIA_SD_URL || "http://127.0.0.1:7860",
   tts: process.env.TALIA_TTS_URL || "",
@@ -36,10 +38,26 @@ async function j(url, opts = {}, timeoutMs = 120000) {
 
 // ---------- Images -------------------------------------------------------
 export async function generateImage(
-  { prompt, negative, steps, cfg, width, height, hires },
+  { prompt, negative, steps, cfg, width, height, hires, useLocal, baseUrl: explicitBase },
   baseUrl = DEFAULTS.image,
 ) {
-  const base = baseUrl.replace(/\/+$/, "");
+  // 1) Talia's own built-in engine first (zero setup), unless the user asked
+  //    for a specific external backend in the Studio's advanced controls.
+  if (useLocal !== false && !explicitBase) {
+    const st = await sdStatus();
+    if (st.installed && st.models.some((m) => m.downloaded)) {
+      const r = await generateLocalImage({ prompt, negative, steps, cfg, width, height });
+      if (r.ok) return r;
+      // Local engine failed but exists → surface its error only if there is
+      // no external backend to fall back to; otherwise try A1111 below.
+      const externalUp = await fetch(`${String(baseUrl).replace(/\/+$/, "")}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) })
+        .then((r) => r.ok)
+        .catch(() => false);
+      if (!externalUp) return r;
+    }
+  }
+
+  const base = String(explicitBase || baseUrl).replace(/\/+$/, "");
   // Try Automatic1111 first, fall back to OpenAI-style endpoint
   try {
     const payload = {
@@ -91,7 +109,7 @@ export async function generateImage(
   } catch (err) {
     return {
       ok: false,
-      error: `No image backend at ${base} — start Automatic1111 (or set TALIA_SD_URL). (${String(err).slice(0, 120)})`,
+      error: `No image backend at ${base} — install Talia's built-in image engine in Media Studio (zero drivers), or start Automatic1111 (or set TALIA_SD_URL). (${String(err).slice(0, 120)})`,
     };
   }
   return { ok: false, error: "Image backend responded but returned no image." };
@@ -199,7 +217,9 @@ export async function generateVideo(
 
 // ---------- Health --------------------------------------------------------
 export async function mediaHealth() {
-  const out = { image: false, tts: !!DEFAULTS.tts, video: false };
+  const sd = await sdStatus();
+  const builtinImage = sd.installed && sd.models.some((m) => m.downloaded);
+  const out = { image: false, builtinImage, tts: !!DEFAULTS.tts, video: false };
   try {
     const r = await fetch(`${DEFAULTS.image.replace(/\/+$/, "")}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) });
     out.image = r.ok;

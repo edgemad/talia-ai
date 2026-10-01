@@ -1,8 +1,88 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Image as ImageIcon, AudioLines, Film, Loader2, SlidersHorizontal } from "lucide-react";
+import { Image as ImageIcon, AudioLines, Film, Loader2, SlidersHorizontal, Sparkles, Download, Trash2, CircleCheck } from "lucide-react";
 import { Modal } from "./ui";
 import { generateImage, generateVideo, speakText, type MediaResult } from "../lib/serverApi";
+import { apiUrl } from "../lib/appMode";
+
+/** Consume a runtime-style SSE endpoint (image engine install / model download). */
+function streamSd(
+  path: string,
+  body: Record<string, unknown>,
+  onEvent: (evt: { phase?: string; message?: string; pct?: number | null; error?: string }) => void,
+): Promise<{ ok?: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    fetch(apiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((r) => {
+        if (!r.ok || !r.body) {
+          resolve({ error: `HTTP ${r.status}` });
+          return;
+        }
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        const step = () => {
+          reader
+            .read()
+            .then(({ done, value }) => {
+              if (done) {
+                resolve({});
+                return;
+              }
+              buf += dec.decode(value, { stream: true });
+              let nl: number;
+              while ((nl = buf.indexOf("\n")) !== -1) {
+                const line = buf.slice(0, nl).trim();
+                buf = buf.slice(nl + 1);
+                if (!line.startsWith("data:")) continue;
+                try {
+                  const evt = JSON.parse(line.slice(5).trim());
+                  if (evt.phase === "complete" || evt.phase === "error") {
+                    resolve(evt);
+                    reader.cancel().catch(() => {});
+                    return;
+                  }
+                  onEvent(evt);
+                } catch {
+                  /* skip */
+                }
+              }
+              step();
+            })
+            .catch((err) => resolve({ error: err.message }));
+        };
+        step();
+      })
+      .catch((err) => resolve({ error: err.message }));
+  });
+}
+
+interface SdModelInfo {
+  id: string;
+  name: string;
+  size: string;
+  sizeBytes: number;
+  blurb: string;
+  recommended: boolean;
+  downloaded: boolean;
+  bytes: number;
+}
+
+interface SdStatus {
+  supported: boolean;
+  targetLabel: string;
+  accelerator: string | null;
+  installed: boolean;
+  version: string | null;
+  selectedModel: string;
+  models: SdModelInfo[];
+  busy: boolean;
+  recommendedModel: string;
+}
 
 type Tab = "image" | "audio" | "video";
 
@@ -92,6 +172,67 @@ export function MediaStudio({
   const [voice, setVoice] = useState("");
   const [ttsUrl, setTtsUrl] = useState("");
 
+  // Built-in image engine (stable-diffusion.cpp)
+  const [sd, setSd] = useState<SdStatus | null>(null);
+  const [sdBusy, setSdBusy] = useState<string | null>(null);
+  const [sdProgress, setSdProgress] = useState<{ msg: string; pct: number | null } | null>(null);
+  const [sdNotice, setSdNotice] = useState<string | null>(null);
+  const [showEngine, setShowEngine] = useState(false);
+
+  const refreshSd = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/api/runtime/sd/status"));
+      const j = await r.json();
+      if (j?.ok) setSd(j as SdStatus);
+    } catch {
+      /* offline */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshSd();
+    const t = setInterval(() => void refreshSd(), 6000);
+    return () => clearInterval(t);
+  }, [open, refreshSd]);
+
+  const installEngine = async () => {
+    setSdBusy("install");
+    setSdProgress({ msg: "Preparing…", pct: null });
+    const r = await streamSd("/api/runtime/sd/install", {}, (evt) =>
+      setSdProgress({ msg: evt.message ?? "Working…", pct: evt.pct ?? null }),
+    );
+    setSdBusy(null);
+    setSdProgress(null);
+    setSdNotice(r.error ? `Setup paused: ${r.error}` : "Image engine ready — now pick a model below ♡");
+    void refreshSd();
+  };
+
+  const downloadModel = async (id: string) => {
+    setSdBusy(`model:${id}`);
+    setSdProgress({ msg: "Starting download…", pct: 0 });
+    const r = await streamSd("/api/runtime/sd/models/download", { id }, (evt) =>
+      setSdProgress({ msg: evt.message ?? "Downloading…", pct: evt.pct ?? null }),
+    );
+    setSdBusy(null);
+    setSdProgress(null);
+    setSdNotice(r.error ? `Download failed: ${r.error}` : "Model ready — press Create ♡");
+    void refreshSd();
+  };
+
+  const removeModel = async (id: string) => {
+    await fetch(apiUrl(`/api/runtime/sd/models/${encodeURIComponent(id)}`), { method: "DELETE" });
+    void refreshSd();
+  };
+
+  // Which brain paints today: the studio's own pick, else the server default.
+  const [preferredModel, setPreferredModel] = useState<string>("");
+  useEffect(() => {
+    if (sd && !preferredModel) setPreferredModel(sd.selectedModel || sd.recommendedModel || "sd-turbo");
+  }, [sd, preferredModel]);
+
+  const sdReady = !!sd?.installed && !!sd?.models.some((m) => m.downloaded);
+  const needsSdSetup = tab === "image" && sd?.supported && !sdReady;
   const q = IMAGE_QUALITY[quality];
   const steps = stepsOverride ?? q.steps;
   const cfg = cfgOverride ?? q.cfg;
@@ -119,6 +260,8 @@ export function MediaStudio({
               width,
               height,
               hires: q.hires,
+              modelId: preferredModel || undefined,
+              useLocal: !imageBackend,
               baseUrl: imageBackend || undefined,
             })
           : tab === "video"
@@ -236,6 +379,127 @@ export function MediaStudio({
         />
       )}
 
+      {tab === "image" && needsSdSetup && sd?.supported && (
+        <div
+          className="mt-3 rounded-2xl border p-3"
+          style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🎨</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-extrabold" style={{ color: "var(--text)" }}>
+                Paint with Talia's own engine
+              </div>
+              <div className="text-[10.5px] font-semibold" style={{ color: "var(--text-faint)" }}>
+                {sd.installed ? "Engine ready — grab a paint brain below." : `${sd.targetLabel} · no drivers, nothing else to install`}
+              </div>
+            </div>
+          </div>
+          {!sd.installed ? (
+            <button
+              onClick={() => void installEngine()}
+              disabled={sdBusy !== null}
+              className="animate-glow mt-2.5 flex w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 text-xs font-extrabold text-white shadow-plush disabled:opacity-50"
+              style={{ background: "var(--accent-grad)" }}
+            >
+              {sdBusy === "install" ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              Install image engine — one tap
+            </button>
+          ) : (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {sd.models.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => void downloadModel(m.id)}
+                  disabled={sdBusy !== null}
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-left transition disabled:opacity-50"
+                  style={{ background: "var(--surface-strong)" }}
+                >
+                  <span className="text-sm">{m.recommended || m.id === sd.recommendedModel ? "⭐" : "🎨"}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11.5px] font-extrabold" style={{ color: "var(--text)" }}>
+                      {m.name} · {m.size}
+                    </span>
+                    <span className="block truncate text-[10px]" style={{ color: "var(--text-faint)" }}>
+                      {m.blurb}
+                    </span>
+                  </span>
+                  {sdBusy === `model:${m.id}` ? <Loader2 size={11} className="animate-spin" /> : <Download size={12} />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "image" && sdReady && (
+        <button
+          onClick={() => setShowEngine((v) => !v)}
+          className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-accent-2"
+        >
+          <Sparkles size={11} /> {showEngine ? "Hide" : "Image engine & models"}
+        </button>
+      )}
+
+      {showEngine && sd && (
+        <div className="mt-2 flex flex-col gap-1.5 rounded-2xl border border-dashed p-3" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+          <div className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: "var(--text-faint)" }}>
+            Paint brains {sd.version ? `· engine v${sd.version}` : ""} {sd.accelerator ? `· ${sd.accelerator}` : ""}
+          </div>
+          {sd.models.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-2 rounded-xl px-2.5 py-1.5"
+              style={{ background: "var(--surface-strong)", border: preferredModel === m.id ? "1px solid var(--accent)" : "1px solid transparent" }}
+            >
+              <span className="text-sm">{m.id === sd.recommendedModel || m.recommended ? "⭐" : "🎨"}</span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[11.5px] font-extrabold" style={{ color: "var(--text)" }}>
+                  {m.name} <span className="font-bold" style={{ color: "var(--text-faint)" }}>· {m.size}</span>
+                </div>
+                <div className="truncate text-[10px]" style={{ color: "var(--text-faint)" }}>
+                  {m.blurb}
+                </div>
+              </div>
+              {m.downloaded ? (
+                <>
+                  <button
+                    onClick={() => setPreferredModel(m.id)}
+                    className="rounded-full px-2 py-0.5 text-[10px] font-extrabold text-white shadow-plush"
+                    style={{ background: preferredModel === m.id ? "var(--accent-grad)" : "var(--surface-strong)", color: preferredModel === m.id ? "#fff" : "var(--text-soft)" }}
+                  >
+                    {preferredModel === m.id ? <CircleCheck size={10} /> : "Use"}
+                  </button>
+                  <button
+                    onClick={() => void removeModel(m.id)}
+                    className="rounded-full p-1 transition hover:bg-rose-500/10"
+                    style={{ color: "var(--text-faint)" }}
+                    aria-label={`Delete ${m.name}`}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => void downloadModel(m.id)}
+                  disabled={sdBusy !== null}
+                  className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold disabled:opacity-40"
+                  style={{ background: "var(--surface-strong)", color: "var(--text-soft)" }}
+                >
+                  {sdBusy === `model:${m.id}` ? <Loader2 size={9} className="animate-spin" /> : <Download size={9} />}
+                  Get
+                </button>
+              )}
+            </div>
+          ))}
+          <div className="text-[10px] font-semibold" style={{ color: "var(--text-faint)" }}>
+            {sd.supported
+              ? `${sd.targetLabel} — no drivers, no GPU required${sd.version ? ` · engine v${sd.version}` : ""}`
+              : `${sd.targetLabel} — no engine build yet; use Automatic1111 or an OpenAI-style image server`}
+          </div>
+        </div>
+      )}
+
       <button
         onClick={() => setShowAdvanced((v) => !v)}
         className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-accent-2"
@@ -298,16 +562,58 @@ export function MediaStudio({
         style={{ background: "var(--accent-grad)" }}
       >
         {busy ? <Loader2 size={16} className="animate-spin" /> : "✨"}
-        {busy ? "Creating…" : "Create"}
+        {busy ? (tab === "image" ? "Painting…" : "Creating…") : tab === "image" && sdReady ? "Paint" : "Create"}
       </motion.button>
 
+      {sdProgress && (
+        <div className="mt-3 rounded-2xl border border-dashed px-3 py-2" style={{ borderColor: "var(--border)" }}>
+          <div className="text-[11px] font-bold" style={{ color: "var(--text-soft)" }}>
+            {sdProgress.msg}
+          </div>
+          {sdProgress.pct !== null && (
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--surface-strong)" }}>
+              <div className="h-full rounded-full transition-all" style={{ width: `${sdProgress.pct}%`, background: "var(--accent-grad)" }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {sdNotice && (
+        <div className="mt-2 text-center text-[11px] font-bold" style={{ color: "var(--accent)" }}>
+          {sdNotice}
+        </div>
+      )}
+
       {result && !result.ok && (
-        <p
+        <div
           className="mt-3 rounded-2xl border p-3 text-xs font-semibold"
           style={{ borderColor: "rgba(251,113,133,0.35)", background: "rgba(251,113,133,0.08)", color: "var(--warn)" }}
         >
           {result.error}
-        </p>
+          {needsSdSetup && (
+            <button
+              onClick={() => void installEngine()}
+              disabled={sdBusy !== null}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-full px-3 py-2 text-[11px] font-extrabold text-white shadow-plush disabled:opacity-40"
+              style={{ background: "var(--accent-grad)" }}
+            >
+              {sdBusy === "install" ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              Install Talia's image engine — one tap, zero drivers
+            </button>
+          )}
+          {sdReady && !imageBackend && tab === "image" && (
+            <button
+              onClick={() => {
+                setResult(null);
+                void run();
+              }}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-extrabold"
+              style={{ background: "var(--surface-strong)", color: "var(--text-soft)" }}
+            >
+              <Sparkles size={11} /> Try again with Talia's built-in engine
+            </button>
+          )}
+        </div>
       )}
 
       {result?.ok && (
@@ -332,10 +638,10 @@ export function MediaStudio({
       )}
 
       <p className="mt-3 text-center text-[11px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
-        Images need Automatic1111/SD on <code className="font-mono">:7860</code> (or an OpenAI-style image
-        server), speech needs Piper (<code className="font-mono">TALIA_TTS_URL</code>), video needs ComfyUI —
-        all optional, all local. Quality tips: describe lighting & style; raise steps for detail; raise CFG
-        to obey the prompt harder.
+        Images paint with <strong style={{ color: "var(--text-soft)" }}>Talia's own engine</strong> — one tap
+        below, no drivers, nothing else to install. Prefer Automatic1111 (<code className="font-mono">:7860</code>)
+        or an OpenAI-style server? Set it in advanced controls. Speech needs Piper (<code className="font-mono">TALIA_TTS_URL</code>),
+        video needs ComfyUI — all optional, all local.
       </p>
     </Modal>
   );

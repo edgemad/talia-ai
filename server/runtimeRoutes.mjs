@@ -15,6 +15,13 @@ import {
   recommendedBrain,
   deviceLabel,
 } from "./runtime.mjs";
+import {
+  sdStatus,
+  installSdRuntime,
+  downloadSdModel,
+  deleteSdModel,
+  uninstallSdRuntime,
+} from "./sd.mjs";
 import os from "node:os";
 import { checkUpdates } from "./updates.mjs";
 
@@ -108,6 +115,37 @@ runtimeApi.get("/updates", async (req, res) => {
   } catch (err) {
     res.status(502).json({ ok: false, error: err.message });
   }
+});
+
+// ---------- built-in image engine (stable-diffusion.cpp) ---------------------------
+runtimeApi.get("/sd/status", async (_req, res) => {
+  try {
+    res.json({ ok: true, ...(await sdStatus()) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+runtimeApi.post("/sd/install", async (req, res) => {
+  sseHead(res);
+  const result = await installSdRuntime({ force: !!req.body?.force, onProgress: (p) => send(res, p) });
+  send(res, result.ok ? { phase: "complete", ...result } : { phase: "error", error: result.error });
+  res.end();
+});
+
+runtimeApi.post("/sd/models/download", async (req, res) => {
+  sseHead(res);
+  const result = await downloadSdModel(String(req.body?.id || ""), (p) => send(res, p));
+  send(res, result.ok ? { phase: "complete", ...result } : { phase: "error", error: result.error });
+  res.end();
+});
+
+runtimeApi.delete("/sd/models/:id", (req, res) => {
+  res.json({ ok: deleteSdModel(String(req.params.id || "")) });
+});
+
+runtimeApi.post("/sd/uninstall", async (_req, res) => {
+  res.json(await uninstallSdRuntime());
 });
 
 export { GGUF_MODELS };
