@@ -87,13 +87,17 @@ export function Composer({
             title="Send"
           >
             <Send size={18} />
-            {/* Spark ring on every send ✨ */}
+            {/* Spark ring on every send ✨ — timeout clears it so the one-shot
+                animation never replays when the button remounts after a reply. */}
             {burst > 0 && (
               <motion.span
                 key={burst}
                 initial={{ scale: 0.6, opacity: 0.85 }}
                 animate={{ scale: 1.9, opacity: 0 }}
                 transition={{ duration: 0.55, ease: "easeOut" }}
+                onAnimationComplete={() => {
+                  setTimeout(() => setBurst(0), 50);
+                }}
                 className="pointer-events-none absolute inset-0 rounded-full"
                 style={{ border: "2.5px solid var(--accent)" }}
               />

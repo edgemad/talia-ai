@@ -364,7 +364,22 @@ export default function App() {
       setNotice(r.error ?? "Couldn't restart the game 🥺");
       return;
     }
-    setGamesByChat((prev) => ({ ...prev, [activeSession.id]: r.session! }));
+    setGamesByChat((prev) => ({ ...prev, [activeSession.id]: { ...r.session!, finished: false } }));
+    if (r.intro) {
+      const introMsg: ChatMessage = {
+        id: makeId(),
+        role: "assistant",
+        content: r.intro,
+        model: settings.model,
+        createdAt: Date.now(),
+      };
+      setSessions((prev) =>
+        prev.map((x) =>
+          x.id === activeSession.id ? { ...x, messages: [...x.messages, introMsg], updatedAt: Date.now() } : x,
+        ),
+      );
+    }
+    setNotice("New round — good luck! 🍀");
   };
 
   // --- Sending -----------------------------------------------------------

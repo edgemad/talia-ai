@@ -473,17 +473,21 @@ export async function startRuntime({ modelId } = {}) {
       stopping = false;
       restarts = 0;
       const spawnOnce = () => {
-        child = spawn(bin.path, ["-m", mp, "--host", "127.0.0.1", "--port", String(RUNTIME_PORT), "-c", "4096"], {
+        const proc = spawn(bin.path, ["-m", mp, "--host", "127.0.0.1", "--port", String(RUNTIME_PORT), "-c", "4096"], {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,
         });
-        child.stdout?.on("data", (d) => log(d.toString()));
-        child.stderr?.on("data", (d) => log(d.toString()));
-        child.on("exit", (code, signal) => {
+        child = proc;
+        proc.stdout?.on("data", (d) => log(d.toString()));
+        proc.stderr?.on("data", (d) => log(d.toString()));
+        proc.on("exit", (code, signal) => {
           lastExit = { code, signal, at: Date.now() };
-          child = null;
+          // Only clear the pointer if this exact process is still the live one —
+          // a stale exit from a previous spawn (stop→start race) must not
+          // orphan the reference to the current engine.
+          if (child === proc) child = null;
           // Auto-restart after an unexpected crash (max 3 attempts).
-          if (!stopping && restarts < 3) {
+          if (!stopping && child === null && restarts < 3) {
             restarts++;
             log(`[runtime] exited (${code ?? signal}) — restart ${restarts}/3`);
             setTimeout(() => void startRuntime({ modelId: id }), 2000 * restarts);
