@@ -11,10 +11,12 @@ import { runtimeApi } from "./runtimeRoutes.mjs";
 import { ensureAutoStart, stopRuntime } from "./runtime.mjs";
 import { flushNow } from "./store.mjs";
 import { isOffline, isLocalUrl, offlineError } from "./settings.mjs";
+import { harden } from "./asyncSafe.mjs";
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+harden(app); // async handler throws → JSON errors, never a crashed sidecar
 
 // v2 feature API (sessions, memory, research, media, catalog)
 app.use("/api", api);
@@ -68,6 +70,25 @@ app.post("/api/stop", (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Provider reachability & listing helpers ----------------------------
+// Providers differ about which path answers: OpenAI-style bases end in /v1,
+// Ollama answers on / and /api/tags, and the built-in engine 404s on /. Probe
+// the meaningful endpoints (stem = base with any /v1 suffix removed) and
+// treat any 2xx as "reachable".
+const providerProbeUrls = (rawBaseUrl) => {
+  const root = rawBaseUrl.replace(/\/+$/, "");
+  const stem = root.replace(/\/v1$/, "");
+  return [...new Set([`${stem}/v1/models`, `${stem}/api/tags`, `${root}/`, `${stem}/`])];
+};
+
+// Some engines report models as full file paths (GGUF builds). Show the file
+// name without extension — prettier in the picker and stable to match.
+function prettyModelId(id) {
+  if (!id.includes("/")) return id;
+  const base = id.split("/").pop() || id;
+  return base.replace(/\.(gguf|safetensors|bin)$/i, "") || id;
+}
+
 // --- Health of the local LLM provider ----------------------------------
 app.get("/api/provider/health", async (req, res) => {
   const cfg = {
@@ -77,18 +98,21 @@ app.get("/api/provider/health", async (req, res) => {
   if ((await isOffline()) && !isLocalUrl(cfg.baseUrl)) {
     return res.json({ online: false, status: 0, error: offlineError("Checking this provider") });
   }
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    const r = await fetch(cfg.baseUrl.replace(/\/+$/, "") + "/", {
-      signal: controller.signal,
-      headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : undefined,
-    });
-    clearTimeout(timer);
-    res.json({ online: r.ok, status: r.status });
-  } catch {
-    res.json({ online: false, status: 0 });
+  const headers = cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : undefined;
+  let lastStatus = 0;
+  for (const url of providerProbeUrls(cfg.baseUrl)) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      const r = await fetch(url, { signal: controller.signal, headers });
+      clearTimeout(timer);
+      lastStatus = r.status;
+      if (r.ok) return res.json({ online: true, status: r.status });
+    } catch {
+      // try the next candidate
+    }
   }
+  res.json({ online: false, status: lastStatus });
 });
 
 // --- Model discovery ----------------------------------------------------
@@ -102,9 +126,10 @@ app.get("/api/provider/models", async (req, res) => {
   if ((await isOffline()) && !isLocalUrl(baseUrl)) {
     return res.status(403).json({ ok: false, error: offlineError("Listing this provider's models") });
   }
+  const stem = baseUrl.replace(/\/v1$/, ""); // tolerate OpenAI-style bases: "…/v1" → "…"
   const candidates = [
-    `${baseUrl}/v1/models`,
-    `${baseUrl}/api/tags`,
+    `${stem}/v1/models`,
+    `${stem}/api/tags`,
   ];
   for (const url of candidates) {
     try {
@@ -118,10 +143,10 @@ app.get("/api/provider/models", async (req, res) => {
       const body = await r.json();
       const models = [];
       if (Array.isArray(body?.data)) {
-        for (const m of body.data) if (m?.id) models.push({ id: String(m.id) });
+        for (const m of body.data) if (m?.id) models.push({ id: prettyModelId(String(m.id)) });
       } else if (Array.isArray(body?.models)) {
         for (const m of body.models) if (m?.name || m?.model) {
-          models.push({ id: String(m.name || m.model) });
+          models.push({ id: prettyModelId(String(m.name || m.model)) });
         }
       }
       if (models.length > 0) {
@@ -237,8 +262,20 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 const parsedPort = Number(process.env.PORT);
 const PORT = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 8787;
-server.listen(PORT, () => {
-  console.log(`🌸 Talia server listening on http://localhost:${PORT}`);
+// Privacy: Talia's API holds your chats, memory and engine controls. Bind to
+// loopback by default so only this machine can reach it. Using the Android
+// thin client against this machine? Start the server with TALIA_BIND=0.0.0.0
+// (or TALIA_LAN=1) to open it to your local network.
+const BIND =
+  process.env.TALIA_BIND === "0.0.0.0" || process.env.TALIA_LAN === "1"
+    ? "0.0.0.0"
+    : "127.0.0.1";
+server.listen(PORT, BIND, () => {
+  console.log(
+    BIND === "0.0.0.0"
+      ? `🌸 Talia server listening on http://0.0.0.0:${PORT} — open to your network (phone connect). Restrict with TALIA_BIND=127.0.0.1.`
+      : `🌸 Talia server listening on http://localhost:${PORT} — local only. Allow phone connections with TALIA_BIND=0.0.0.0.`,
+  );
   // Bring Talia's own engine up if it was installed and enabled (best effort).
   if (process.env.TALIA_NO_AUTOSTART !== "1") void ensureAutoStart();
 });

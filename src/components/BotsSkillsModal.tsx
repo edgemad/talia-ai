@@ -3,11 +3,24 @@ import { motion } from "framer-motion";
 import { Loader2, Plus, Sparkles, Trash2, Wand2, Users } from "lucide-react";
 import { Modal } from "./ui";
 import { createBot, deleteBot, fetchBots, type BotDef } from "../lib/botsApi";
-import { SKILLS } from "../lib/skills";
+import {
+  allSkills,
+  deleteCustomSkill,
+  upsertCustomSkill,
+  type SkillRunner,
+} from "../lib/skills";
 
 type Tab = "bots" | "skills";
 
 const QUICK_EMOJI = ["🤖", "🧪", "🎯", "🧭", "🪄", "📚", "🍳", "💪", "🎬", "🧘"];
+const EMPTY_SKILL_FORM = {
+  name: "",
+  emoji: "✨",
+  description: "",
+  inputHint: "",
+  systemPrompt: "",
+  userTemplate: "",
+};
 
 export function BotsSkillsModal({
   open,
@@ -31,11 +44,30 @@ export function BotsSkillsModal({
   const [saving, setSaving] = useState(false);
   const [activeSkill, setActiveSkill] = useState<string | null>(null);
   const [skillInput, setSkillInput] = useState("");
+  const [skills, setSkills] = useState<SkillRunner[]>([]);
+  const [showCreateSkill, setShowCreateSkill] = useState(false);
+  const [skillForm, setSkillForm] = useState({ ...EMPTY_SKILL_FORM });
 
   useEffect(() => {
     if (!open) return;
     void fetchBots().then(setBots);
+    setSkills(allSkills());
   }, [open]);
+
+  const saveCustomSkill = () => {
+    if (!skillForm.name.trim() || !skillForm.systemPrompt.trim()) return;
+    upsertCustomSkill({
+      name: skillForm.name.trim(),
+      emoji: skillForm.emoji || "✨",
+      description: skillForm.description.trim(),
+      inputHint: skillForm.inputHint.trim() || "Input for this skill",
+      systemPrompt: skillForm.systemPrompt.trim(),
+      userTemplate: skillForm.userTemplate,
+    });
+    setSkills(allSkills());
+    setSkillForm({ ...EMPTY_SKILL_FORM });
+    setShowCreateSkill(false);
+  };
 
   const saveBot = async () => {
     if (!form.name.trim() || !form.systemPrompt.trim() || saving) return;
@@ -220,8 +252,7 @@ export function BotsSkillsModal({
         <div className="flex flex-col gap-2">
           <p className="text-[11px] font-semibold" style={{ color: "var(--text-faint)" }}>
             One-tap tasks with expert prompts. Skills use the current chat as context when it helps.
-          </p>
-          {SKILLS.map((s) => (
+          </p>            {skills.map((s) => (
             <div key={s.id}>
               <button
                 onClick={() => {
@@ -243,6 +274,20 @@ export function BotsSkillsModal({
                     {s.description}
                   </span>
                 </span>
+                {s.id.startsWith("custom-") && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteCustomSkill(s.id);
+                      setSkills(allSkills());
+                    }}
+                    className="rounded-full p-1.5 transition hover:bg-rose-500/10"
+                    style={{ color: "var(--text-faint)" }}
+                    aria-label={`Delete ${s.name}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
                 <Sparkles size={14} className="shrink-0 text-accent-2" />
               </button>
               {activeSkill === s.id && (
@@ -273,6 +318,89 @@ export function BotsSkillsModal({
               )}
             </div>
           ))}
+
+          {showCreateSkill ? (
+            <div className="flex flex-col gap-2 rounded-2xl border border-dashed p-3" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+              <div className="flex gap-2">
+                <input
+                  value={skillForm.emoji}
+                  onChange={(e) => setSkillForm({ ...skillForm, emoji: e.target.value.slice(0, 4) })}
+                  className="w-14 rounded-xl border px-2 py-2 text-center text-lg outline-none focus:border-accent"
+                  style={{ background: "var(--surface-strong)", borderColor: "var(--border)", color: "var(--text)" }}
+                  aria-label="Skill emoji"
+                />
+                <input
+                  value={skillForm.name}
+                  onChange={(e) => setSkillForm({ ...skillForm, name: e.target.value })}
+                  placeholder="Skill name, e.g. Recipe scaler"
+                  className="flex-1 rounded-xl border px-3 py-2 text-[13px] outline-none focus:border-accent"
+                  style={{ background: "var(--surface-strong)", borderColor: "var(--border)", color: "var(--text)" }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {["✨", "🧮", "🍜", "🎯", "🧾", ...QUICK_EMOJI].map((e) => (
+                  <button
+                    key={e}
+                    onClick={() => setSkillForm({ ...skillForm, emoji: e })}
+                    className="rounded-lg px-1.5 py-0.5 text-base transition hover:bg-white/50"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={skillForm.description}
+                onChange={(e) => setSkillForm({ ...skillForm, description: e.target.value })}
+                placeholder="One-line description (shown in the list)"
+                className="rounded-xl border px-3 py-2 text-[13px] outline-none focus:border-accent"
+                style={{ background: "var(--surface-strong)", borderColor: "var(--border)", color: "var(--text)" }}
+              />
+              <textarea
+                rows={3}
+                value={skillForm.systemPrompt}
+                onChange={(e) => setSkillForm({ ...skillForm, systemPrompt: e.target.value })}
+                placeholder="System prompt — how should Talia think, format and answer for this skill?"
+                className="resize-y rounded-xl border px-3 py-2 text-[13px] outline-none focus:border-accent"
+                style={{ background: "var(--surface-strong)", borderColor: "var(--border)", color: "var(--text)" }}
+              />
+              <textarea
+                rows={2}
+                value={skillForm.userTemplate}
+                onChange={(e) => setSkillForm({ ...skillForm, userTemplate: e.target.value })}
+                placeholder="Optional user-message template — use {{text}} for your input and {{context}} for this chat"
+                className="resize-y rounded-xl border px-3 py-2 text-[13px] outline-none focus:border-accent"
+                style={{ background: "var(--surface-strong)", borderColor: "var(--border)", color: "var(--text)" }}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowCreateSkill(false);
+                    setSkillForm({ ...EMPTY_SKILL_FORM });
+                  }}
+                  className="glass-pill flex-1 rounded-full px-3 py-2 text-xs font-bold"
+                  style={{ color: "var(--text-soft)" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveCustomSkill}
+                  disabled={!skillForm.name.trim() || !skillForm.systemPrompt.trim()}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-extrabold text-white shadow-plush disabled:opacity-40"
+                  style={{ background: "var(--accent-grad)" }}
+                >
+                  <Plus size={13} /> Save skill
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowCreateSkill(true)}
+              className="glass-pill flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-xs font-extrabold transition hover:brightness-105"
+              style={{ color: "var(--text-soft)" }}
+            >
+              <Plus size={14} className="text-accent-2" /> Create your own skill
+            </button>
+          )}
         </div>
       )}
     </Modal>

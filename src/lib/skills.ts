@@ -101,6 +101,99 @@ export const SKILLS: SkillRunner[] = [
   },
 ];
 
+// ---------- Custom skills (user-defined, stored locally) -------------------
+
+export interface CustomSkillDef {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  inputHint: string;
+  /** How Talia should think/format for this skill. */
+  systemPrompt: string;
+  /** User-message template. {{text}} = your input, {{context}} = this chat. */
+  userTemplate: string;
+}
+
+const CUSTOM_KEY = "talia-ai:custom-skills:v1";
+
+export function loadCustomSkills(): CustomSkillDef[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_KEY);
+    const list = raw ? (JSON.parse(raw) as CustomSkillDef[]) : [];
+    return Array.isArray(list)
+      ? list.filter((s) => s && s.id && s.name && s.systemPrompt)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomSkills(list: CustomSkillDef[]): void {
+  try {
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify(list.slice(-100)));
+  } catch {
+    /* storage full or unavailable */
+  }
+}
+
+export function upsertCustomSkill(
+  def: Omit<CustomSkillDef, "id"> & { id?: string },
+): CustomSkillDef {
+  const list = loadCustomSkills();
+  const id =
+    def.id ||
+    `custom-${
+      def.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || Date.now().toString(36)
+    }`;
+  const next: CustomSkillDef = { ...def, id };
+  saveCustomSkills([...list.filter((s) => s.id !== next.id), next]);
+  return next;
+}
+
+export function deleteCustomSkill(id: string): void {
+  saveCustomSkills(loadCustomSkills().filter((s) => s.id !== id));
+}
+
+function interpolate(tpl: string, args: SkillArgs): string {
+  return tpl
+    .replaceAll("{{text}}", args.text?.trim() ?? "")
+    .replaceAll("{{context}}", args.context?.trim() ?? "");
+}
+
+function customToRunner(def: CustomSkillDef): SkillRunner {
+  return {
+    id: def.id,
+    name: def.name,
+    emoji: def.emoji || "✨",
+    description: def.description || "Your custom skill",
+    inputHint: def.inputHint || "Input for this skill",
+    build: ({ text, context }) => {
+      const tpl = def.userTemplate.trim();
+      let user: string;
+      if (tpl) {
+        user = interpolate(tpl, { text: text ?? "", context: context ?? "" });
+        // If the template ignores the placeholders, the typed input still has
+        // to reach the model somehow — append it.
+        if (!tpl.includes("{{text}}") && !tpl.includes("{{context}}") && text?.trim()) {
+          user = `${user}\n\n${text.trim()}`;
+        }
+      } else {
+        user = [text?.trim(), context?.trim()].filter(Boolean).join("\n\n") || "(no input)";
+      }
+      return { system: def.systemPrompt, user };
+    },
+  };
+}
+
+/** Builtin + user-created skills, in list order. */
+export function allSkills(): SkillRunner[] {
+  return [...SKILLS, ...loadCustomSkills().map(customToRunner)];
+}
+
 export function skillById(id: string): SkillRunner | null {
-  return SKILLS.find((s) => s.id === id) ?? null;
+  return allSkills().find((s) => s.id === id) ?? null;
 }

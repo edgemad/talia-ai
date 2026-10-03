@@ -87,6 +87,9 @@ export default function App() {
   const [models, setModels] = useState<DiscoveredModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The message currently being streamed — the typing indicator rides on this
+  // (during regeneration the streaming message isn't the last one in the list).
+  const [streamingId, setStreamingId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModels, setShowModels] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
@@ -142,6 +145,14 @@ export default function App() {
 
   // Persist
   useEffect(() => saveSettings(settings), [settings]);
+
+  // Notices fade on their own — a stuck toast used to hover over the composer
+  // until manually clicked.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   // Offline Mode lives in localStorage (UI) and in Talia's server store —
   // keep the server side in step so its gates honor the toggle.
@@ -250,6 +261,7 @@ export default function App() {
     patchSession(sessionId, { messages: [...activeSession.messages, userMsg, assistantMsg] });
     setBusy(true);
     stopFlag.current = false;
+    setStreamingId(assistantId);
     const controller = new AbortController();
     abortRef.current = controller;
     lastRequestId.current = assistantId;
@@ -355,6 +367,7 @@ export default function App() {
       );
     } finally {
       setBusy(false);
+      setStreamingId(null);
       abortRef.current = null;
     }
     return true;
@@ -467,14 +480,28 @@ export default function App() {
 
     setBusy(true);
     stopFlag.current = false;
+    setStreamingId(assistantId);
 
+    // Regen: re-answer IN PLACE. Context is everything *before* the message
+    // being regenerated — later turns were written after that answer and
+    // would leak into it.
+    const regenIdx = regen
+      ? activeSession.messages.findIndex((m) => m.id === opts.regenerateOf)
+      : -1;
     const currentMessages = regen
-      ? activeSession.messages.filter((m) => m.id !== opts.regenerateOf)
+      ? activeSession.messages.slice(0, regenIdx >= 0 ? regenIdx : undefined)
       : [...activeSession.messages, userMsg];
-    patchSession(sessionId, { messages: [...currentMessages, assistantMsg] });
+    // Display: swap the fresh answer into the old message's slot (append if
+    // the target vanished mid-flight, e.g. the session was edited meanwhile).
+    const displayMessages = regen
+      ? regenIdx >= 0
+        ? activeSession.messages.map((m) => (m.id === opts.regenerateOf ? assistantMsg : m))
+        : [...activeSession.messages, assistantMsg]
+      : [...currentMessages, assistantMsg];
+    patchSession(sessionId, { messages: displayMessages });
 
     // What we ask memory/research about: the typed text, or for a regen the
-    // last user message in the remaining history.
+    // last user message before the regenerated answer.
     const promptText = regen
       ? ([...currentMessages].reverse().find((m) => m.role === "user")?.content ?? "")
       : text;
@@ -492,7 +519,7 @@ export default function App() {
     try {
       // 1) Memory recall (fast, local)
       if (settings.autoRemember && promptText) {
-        const hits = await recallMemory(promptText, 5);
+        const hits = await recallMemory(promptText, 8);
         if (hits.length > 0) {
           systemParts.push(
             "Things you remember about the user (use naturally, don't list them back verbatim):\n" +
@@ -620,13 +647,18 @@ export default function App() {
       // Post-response housekeeping: auto-remember + TTS
       const assistantText = assistantAccumulator.trim();
       if (settings.autoRemember && assistantText && !regen) {
-        void rememberExchange(text, assistantText, sessionId);
+        void rememberExchange(text, assistantText, sessionId)
+          .then((r) => {
+            if ((r?.saved ?? 0) > 0) setNotice("🧠 Noted — I'll remember that ♡");
+          })
+          .catch(() => {});
       }
       if (settings.ttsEnabled && assistantText) {
         void speakText(assistantText.slice(0, 1200));
       }
     } finally {
       setBusy(false);
+      setStreamingId(null);
       abortRef.current = null;
       setResearchStatus(null);
     }
@@ -674,6 +706,7 @@ export default function App() {
     patchSession(sessionId, { messages: [...activeSession.messages, skillMsg] });
     setBusy(true);
     stopFlag.current = false;
+    setStreamingId(assistantId);
 
     const payloadMessages = [
       ...(built.system ? [{ role: "system" as const, content: built.system }] : []),
@@ -735,6 +768,7 @@ export default function App() {
     } finally {
       setBusy(false);
       abortRef.current = null;
+      setStreamingId(null);
     }
   };
 
@@ -925,7 +959,7 @@ export default function App() {
                   <MessageBubble
                     key={m.id}
                     message={m}
-                    isStreaming={busy && m.id === messages[messages.length - 1]?.id}
+                    isStreaming={m.id === streamingId}
                     theme={themeId}
                     onRemember={rememberOne}
                     onRegenerate={m.role === "assistant" ? (msg) => regenerateMessage(msg.id) : undefined}

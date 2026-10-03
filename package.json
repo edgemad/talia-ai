@@ -1,7 +1,7 @@
 {
   "name": "talia-ai",
   "private": true,
-  "version": "0.4.9",
+  "version": "0.4.12",
   "type": "module",
   "description": "Talia AI — an adorably cozy local LLM chat companion for Ollama and any OpenAI-compatible server.",
   "scripts": {

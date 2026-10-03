@@ -1,5 +1,6 @@
 // v2 feature routes: sessions, memory, research, media, model catalog, bots & skills.
 import { Router } from "express";
+import { harden } from "./asyncSafe.mjs";
 import {
   rememberFact,
   recall,
@@ -35,6 +36,7 @@ import {
 import { CATALOGUE } from "./gamePacks.mjs";
 
 export const api = Router();
+harden(api); // async handler throws → JSON errors, never a crashed sidecar
 
 // ---------- Bots ----------------------------------------------------------
 api.get("/bots", async (_req, res) => {

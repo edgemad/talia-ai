@@ -110,5 +110,5 @@ function tokenizeLength(t) {
   return t
     .split(/(?<=[.!?])\s+|\n+/)
     .map((s) => s.trim())
-    .filter((s) => s.length >= 25 && s.length <= 400);
+    .filter((s) => s.length >= 15 && s.length <= 400);
 }

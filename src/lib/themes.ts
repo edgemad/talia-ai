@@ -71,18 +71,27 @@ export function applyTheme(id: string): void {
 }
 
 /** Tiny connectivity probe: online() mirrors navigator, verify() does a real fetch. */
+// Reachability probes: real 200 responses from CDNs that send
+// `Access-Control-Allow-Origin: *`, so the webview is allowed to read them.
+// (The old probe URL `npm/ping@1.0.2/package.json` 404s, which made Talia
+// believe it was offline forever — even with a perfectly working connection.)
+const ONLINE_PROBES = [
+  "https://cdn.jsdelivr.net/npm/react@18.3.1/package.json",
+  "https://unpkg.com/react@18.3.1/package.json",
+];
+
 export async function verifyOnline(timeoutMs = 2500): Promise<boolean> {
   if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const r = await fetch("https://cdn.jsdelivr.net/npm/ping@1.0.2/package.json", {
-      signal: controller.signal,
-      cache: "no-store",
-    });
-    clearTimeout(timer);
-    return r.ok;
-  } catch {
-    return false;
+  for (const url of ONLINE_PROBES) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const r = await fetch(url, { signal: controller.signal, cache: "no-store" });
+      clearTimeout(timer);
+      if (r.ok) return true;
+    } catch {
+      // probe failed (timeout, DNS, captive portal) — try the next one
+    }
   }
+  return false;
 }

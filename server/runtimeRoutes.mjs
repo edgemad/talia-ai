@@ -1,5 +1,6 @@
 // Routes for Talia's built-in AI engine and the always-up-to-date checks.
 import { Router } from "express";
+import { harden } from "./asyncSafe.mjs";
 import {
   RUNTIME_BASE_URL,
   GGUF_MODELS,
@@ -26,6 +27,7 @@ import os from "node:os";
 import { checkUpdates } from "./updates.mjs";
 
 export const runtimeApi = Router();
+harden(runtimeApi); // async handler throws → JSON/SSE errors, never a crash
 
 function sseHead(res) {
   res.writeHead(200, {
