@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2, Brain, Wand2, Bot, Gamepad2 } from "lucide-react";
+import { Plus, Trash2, Brain, Wand2, Bot, Gamepad2, Sparkles } from "lucide-react";
 import type { ChatSession } from "../types";
 
 // ---------- resizable width (persisted) ---------------------------------------
@@ -28,18 +28,22 @@ function QuickActions({
   onOpenBots,
   onOpenStudio,
   onOpenGames,
+  onOpenDots,
 }: {
   onOpenMemory: () => void;
   onOpenBots: () => void;
   onOpenStudio: () => void;
   onOpenGames: () => void;
+  onOpenDots: () => void;
 }) {
-  // 2×2 grid at every width — nothing can ever clip, even on a narrow sidebar.
+  // 2-column grid at every width — nothing can ever clip, even on a narrow
+  // sidebar. Dots is the flagship so it spans both columns.
   const items = [
-    { label: "Memory", icon: <Brain size={12} className="text-accent-2" />, on: onOpenMemory },
-    { label: "Bots", icon: <Bot size={12} className="text-accent" />, on: onOpenBots },
-    { label: "Studio", icon: <Wand2 size={12} className="text-accent" />, on: onOpenStudio },
-    { label: "Games", icon: <Gamepad2 size={12} className="text-accent-2" />, on: onOpenGames },
+    { label: "Dots", icon: <Sparkles size={12} className="text-accent" />, on: onOpenDots, wide: true },
+    { label: "Memory", icon: <Brain size={12} className="text-accent-2" />, on: onOpenMemory, wide: false },
+    { label: "Bots", icon: <Bot size={12} className="text-accent" />, on: onOpenBots, wide: false },
+    { label: "Studio", icon: <Wand2 size={12} className="text-accent" />, on: onOpenStudio, wide: false },
+    { label: "Games", icon: <Gamepad2 size={12} className="text-accent-2" />, on: onOpenGames, wide: false },
   ];
   return (
     <div className="grid grid-cols-2 gap-1.5">
@@ -47,7 +51,9 @@ function QuickActions({
         <button
           key={it.label}
           onClick={it.on}
-          className="glass-pill flex items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105"
+          className={`glass-pill flex items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-bold transition hover:brightness-105 ${
+            it.wide ? "col-span-2" : ""
+          }`}
           style={{ color: "var(--text-soft)" }}
         >
           {it.icon}
@@ -70,6 +76,7 @@ export function SessionSidebar({
   onOpenBots,
   onOpenStudio,
   onOpenGames,
+  onOpenDots,
 }: {
   open: boolean;
   sessions: ChatSession[];
@@ -81,6 +88,7 @@ export function SessionSidebar({
   onOpenBots: () => void;
   onOpenStudio: () => void;
   onOpenGames: () => void;
+  onOpenDots: () => void;
 }) {
   const [width, setWidth] = useState<number>(loadWidth);
   const dragging = useRef(false);
@@ -142,6 +150,7 @@ export function SessionSidebar({
           onOpenBots={onOpenBots}
           onOpenStudio={onOpenStudio}
           onOpenGames={onOpenGames}
+          onOpenDots={onOpenDots}
         />
       </div>
 

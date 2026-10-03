@@ -31,6 +31,7 @@ subtle sheen that sweeps across surfaces. Themes persist in localStorage.
 |---|---|
 | 💬 **Streaming chat** | Markdown, code blocks, liquid-glass bubbles, stop/continue, regenerate, export MD/JSON |
 | 🤖 **Bots & Skills** | Six built-in specialist bots (coder, writer, analyst, tutor, brainstormer, researcher) + create your own; one-tap skills: summarize, review code, translate, explain, action items, draft email |
+| 🔵 **Dots — always-on agents** | Give a dot a goal and a cadence and Talia keeps working on it between conversations: she researches, writes progress reports you can read later, and learns from your 👍/👎 feedback |
 | 🔌 **Any provider, free first** | Ollama/LM Studio/Jan/llama.cpp locally — plus free-tier cloud APIs (Groq, OpenRouter, Gemini, Mistral) or OpenAI/Claude via one key each |
 | 🗂️ **Multi-chat sessions** | Sidebar of conversations, auto-titled, stored on disk — survives restarts |
 | 🧠 **Memory across chats** | Talia keeps facts & snippets in a local vector-ish store and recalls them in *any* conversation. Hover any message → 🧠 to pin it |
@@ -120,6 +121,31 @@ Open **Bots** in the sidebar:
   keyword matches and recency decay, then injects the top hits into the system prompt.
 - Everything lives in `~/.talia-ai/*.json`. Delete the file, mind wiped. ✨
 
+## 🔵 Dots (always-on agents)
+
+Open **Dots** in the sidebar. A *dot* is a persistent, goal-holding agent — Talia's
+answer to OpenAI's Dots — that keeps working **between** conversations:
+
+- Give it a **goal** (and optional standing instructions) and a **cadence** (every
+  15m up to daily). The server wakes it on that cadence, thinks with your local
+  model, and writes a **progress report**.
+- When a dot is allowed to *act*, it can pull in **live web research** and cite
+  sources; set it to *local knowledge only* and it never touches the network.
+- **Feedback = learning**: hover a dot, drop a note and hit 👍/👎. Talia distills
+  it into a learning that every future session respects.
+- Everything a dot finds is saved to cross-chat **memory**, so your next chat
+  already knows it. Reports, activity and learnings live in `~/.talia-ai/dots.json`.
+
+A dot's tools are deliberately small — the model, memory and (optional) web
+research. There's no shell or filesystem access, so an always-on loop can never
+run away with your machine. Offline Mode is honored: with it on, dots keep
+working from the model's own knowledge and simply skip the web. Disable the whole
+subsystem with `TALIA_DOTS_DISABLED=1`.
+
+A dot's provider **API key is held in memory only** — it is never written to
+`dots.json`. The UI re-arms the key when it connects, so cloud-backed dots keep
+working unattended, while keyless local models need nothing at all.
+
 ## 🌐 Research mode
 
 Toggle the 🌐 in the composer (or Settings → Superpowers). Before answering, Talia:
@@ -192,6 +218,7 @@ React + Vite + Tailwind + Framer Motion  ←→  Express (8787)
 | `TALIA_SD_URL` | `127.0.0.1:7860` | Stable Diffusion webui API |
 | `TALIA_TTS_URL` | — | TTS endpoint (`POST {text}` → audio) |
 | `TALIA_COMFY_URL` | — | ComfyUI base URL for video |
+| `TALIA_DOTS_DISABLED` | — | Set to `1` to turn off the always-on Dots scheduler |
 
 ## 🧪 Tests & scripts
 

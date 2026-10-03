@@ -23,6 +23,7 @@ import {
 import { fetchBots, type BotDef } from "./lib/botsApi";
 import { skillById } from "./lib/skills";
 import { MemoryPanel } from "./components/MemoryPanel";
+import { DotsPanel } from "./components/DotsPanel";
 import { ThemePicker } from "./components/ThemePicker";
 import { EmptyState } from "./components/StatusPill";
 import { Mascot } from "./components/Mascot";
@@ -55,6 +56,7 @@ import {
   runResearch,
   speakText,
 } from "./lib/serverApi";
+import { armDots } from "./lib/dotsApi";
 import { applyTheme, loadTheme, saveTheme } from "./lib/themes";
 import { getApiBase, setApiBase, apiUrl } from "./lib/appMode";
 import { useOnline } from "./lib/useOnline";
@@ -98,6 +100,7 @@ export default function App() {
   const [showMemory, setShowMemory] = useState(false);
   const [showBots, setShowBots] = useState(false);
   const [showGames, setShowGames] = useState(false);
+  const [showDots, setShowDots] = useState(false);
   const [bots, setBots] = useState<BotDef[]>([]);
   // Live game session per chat — the Arcade pins a game to the conversation.
   const [gamesByChat, setGamesByChat] = useState<Record<string, ActiveGame>>({});
@@ -166,6 +169,12 @@ export default function App() {
     }).catch(() => {});
     return () => controller.abort();
   }, [settings.offline]);
+
+  // Arm Dots with the current provider key. The server keeps it in memory only,
+  // so cloud-backed dots can run unattended without the key ever hitting disk.
+  useEffect(() => {
+    void armDots(settings.provider);
+  }, [settings.provider.baseUrl, settings.provider.apiKey]);
   useEffect(() => {
     if (activeSession) saveSessions(sessions);
   }, [sessions, activeSession]);
@@ -869,6 +878,7 @@ export default function App() {
         onOpenStudio={() => setShowStudio(true)}
         onOpenBots={() => setShowBots(true)}
         onOpenGames={() => setShowGames(true)}
+        onOpenDots={() => setShowDots(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -1068,6 +1078,13 @@ export default function App() {
         onPlay={(g) => void startPlaying(g)}
       />
       <MemoryPanel open={showMemory} onClose={() => setShowMemory(false)} onUpload={uploadChatToMemory} />
+      <DotsPanel
+        open={showDots}
+        onClose={() => setShowDots(false)}
+        provider={settings.provider}
+        model={settings.model}
+        onNotice={setNotice}
+      />
       <ThemePicker
         open={showThemes}
         onClose={() => setShowThemes(false)}

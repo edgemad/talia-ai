@@ -8,6 +8,8 @@ import { buildProviderRequest, validateProviderConfig } from "./provider.mjs";
 import { encodeSSE } from "./sse.mjs";
 import { api } from "./routes.mjs";
 import { runtimeApi } from "./runtimeRoutes.mjs";
+import { dotsApi } from "./dotsRoutes.mjs";
+import { startDotsScheduler, stopDotsScheduler } from "./dots.mjs";
 import { ensureAutoStart, stopRuntime } from "./runtime.mjs";
 import { flushNow } from "./store.mjs";
 import { isOffline, isLocalUrl, offlineError } from "./settings.mjs";
@@ -23,6 +25,9 @@ app.use("/api", api);
 
 // Built-in local AI engine + update checks (no drivers, zero setup)
 app.use("/api/runtime", runtimeApi);
+
+// 🤖 Dots — always-on agents that keep working between conversations.
+app.use("/api", dotsApi);
 
 // Standalone mode: serve the built frontend from dist/ when present,
 // so `npm run server` alone is the whole app.
@@ -251,6 +256,7 @@ server.requestTimeout = 0; // allow long-running SSE streams
 async function shutdown(signal) {
   console.log(`\n🌸 ${signal} — saving Talia's memories…`);
   try {
+    stopDotsScheduler();
     stopRuntime();
     await flushNow();
   } finally {
@@ -278,6 +284,8 @@ server.listen(PORT, BIND, () => {
   );
   // Bring Talia's own engine up if it was installed and enabled (best effort).
   if (process.env.TALIA_NO_AUTOSTART !== "1") void ensureAutoStart();
+  // Wake any due Dots on their own clock (kill switch: TALIA_DOTS_DISABLED=1).
+  startDotsScheduler();
 });
 
 // Built-in self test (used by the sidecar build smoke test and CI):
