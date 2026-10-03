@@ -325,6 +325,39 @@ api.post("/games/:sid/move", async (req, res) => {
   }
 });
 
+// A silent move for *graphical* games: Blockcraft's canvas client clicks blocks
+// instead of typing, and a click must never become a chat bubble. Same engine,
+// same live session — just no transcript, no SSE and no model round trip, so a
+// kid can mine sixty blocks without burying the conversation.
+//
+// Creative mode keeps the round open (hitting the goal celebrates but doesn't
+// end the world), and the session is only ever closed by /end — never by a win.
+api.post("/games/:sid/action", (req, res) => {
+  const session = getGameSession(String(req.params.sid || ""));
+  if (!session) {
+    return res.status(404).json({ ok: false, error: "game-session-gone" });
+  }
+  const text = String(req.body?.text ?? "").slice(0, 200);
+  if (!text.trim()) return res.status(400).json({ ok: false, error: "empty-action" });
+
+  const opts = { quiet: true, creative: true, reach: Number(session.state?.reach) || 0 };
+  let result;
+  try {
+    result = session.engine.step(session.state, text, opts);
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: `Game engine hiccup: ${err.message}` });
+  }
+  // A click can't show a streamed model reply, so refuse the LLM-ish verbs
+  // (blueprint…) instead of stalling the canvas on a request it can't render.
+  if (result.needsLlm) {
+    return res.status(400).json({ ok: false, error: "That one needs Talia — type it in the chat instead." });
+  }
+
+  session.state = result.state;
+  session.touch();
+  res.json({ ok: true, state: sanitizeGameState(session.state), note: result.note ?? "" });
+});
+
 api.post("/games/:sid/end", (req, res) => {
   endGameSession(String(req.params.sid || ""));
   res.json({ ok: true });

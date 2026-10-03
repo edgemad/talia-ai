@@ -10,6 +10,7 @@ export function Modal({
   icon,
   children,
   footer,
+  wide,
 }: {
   open: boolean;
   onClose: () => void;
@@ -17,6 +18,8 @@ export function Modal({
   icon?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  /** Wider panel — for anything with a canvas or a grid in it. */
+  wide?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -42,7 +45,7 @@ export function Modal({
         >
           <motion.div
             ref={panelRef}
-            className="glass-strong flex max-h-[85vh] w-full max-w-lg flex-col rounded-[2rem]"
+            className={`glass-strong flex max-h-[88vh] w-full flex-col rounded-[2rem] ${wide ? "max-w-3xl" : "max-w-lg"}`}
             initial={{ scale: 0.85, y: 24, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.9, y: 16, opacity: 0 }}

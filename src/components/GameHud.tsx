@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { RotateCcw, X } from "lucide-react";
 import type { ActiveGame } from "../lib/gamesApi";
+import { BlockcraftWorld } from "./BlockcraftWorld";
+import { MarioGame } from "./MarioGame";
+
+/** Games that are a whole playable world on a canvas rather than a small board. */
+const WORLD_GAMES = new Set(["blockcraft", "super-hop"]);
 
 // ---------- boards -----------------------------------------------------------
 
@@ -135,11 +140,17 @@ export function GameHud({
   game,
   onEnd,
   onPlayAgain,
+  onAction,
+  onPickLevel,
   busy,
 }: {
   game: ActiveGame;
   onEnd: () => void;
   onPlayAgain: () => void;
+  /** Silent, chat-free moves for graphical games (Blockcraft, Super Hop). */
+  onAction?: (text: string) => Promise<string | void> | string | void;
+  /** Super Hop's level picker — restarts the round on another level. */
+  onPickLevel?: (level: number) => void;
   busy?: boolean;
 }) {
   const status = String(game.state.status ?? "playing");
@@ -148,13 +159,18 @@ export function GameHud({
   const boardGameId = game.gameId;
   const showTicTacToe = boardGameId === "tictactoe";
   const showConnect4 = boardGameId === "connect4";
+  // Blockcraft and Super Hop are whole playable worlds, not boards — they get
+  // their own canvas and a wider HUD so the action stays big enough to play.
+  // Not gated on onAction: the world must always draw, even if syncing is
+  // somehow unavailable, or the game vanishes into an empty HUD.
+  const showWorld = WORLD_GAMES.has(boardGameId);
   const lives = typeof game.state.lives === "number" ? game.state.lives : null;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass-strong mx-auto mb-1 w-[min(94%,42rem)] rounded-3xl px-4 py-3"
+      className={`glass-strong mx-auto mb-1 rounded-3xl px-4 py-3 ${showWorld ? "w-[min(97%,58rem)]" : "w-[min(94%,42rem)]"}`}
     >
       <div className="relative flex items-center gap-2">
         {status === "won" && <WinConfetti />}
@@ -193,7 +209,17 @@ export function GameHud({
         </button>
       </div>
 
-      {(chips.length > 0 || lives !== null || showTicTacToe || showConnect4) && (
+      {showWorld && (
+        <div className="mt-2">
+          {boardGameId === "super-hop" ? (
+            <MarioGame state={game.state} onAction={onAction} onPickLevel={onPickLevel} />
+          ) : (
+            <BlockcraftWorld state={game.state} onAction={onAction!} />
+          )}
+        </div>
+      )}
+
+      {!showWorld && (chips.length > 0 || lives !== null || showTicTacToe || showConnect4) && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {showTicTacToe && <TicTacToeBoard state={game.state} />}
           {showConnect4 && <Connect4Board state={game.state} />}
@@ -211,7 +237,7 @@ export function GameHud({
         </div>
       )}
 
-      {game.howTo && status === "playing" && (
+      {game.howTo && status === "playing" && !showWorld && (
         <p className="mt-1.5 text-[10px] font-bold" style={{ color: "var(--text-faint)" }}>
           How to play: {game.howTo}
         </p>

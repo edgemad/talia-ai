@@ -100,12 +100,13 @@ export async function uninstallGame(id: string): Promise<boolean> {
 export async function startGame(
   gameId: string,
   chatId: string,
+  opts?: { level?: number },
 ): Promise<{ ok: boolean; error?: string; session?: ActiveGame; intro?: string }> {
   try {
     const r = await fetch(apiUrl("/api/games/start"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gameId, chatId }),
+      body: JSON.stringify({ gameId, chatId, ...(opts?.level !== undefined ? { level: opts.level } : {}) }),
     });
     const j = await r.json();
     if (!j?.ok) return { ok: false, error: j?.error ?? `HTTP ${r.status}` };
@@ -196,5 +197,31 @@ export async function endGame(sessionId: string): Promise<void> {
     await fetch(apiUrl(`/api/games/${encodeURIComponent(sessionId)}/end`), { method: "POST" });
   } catch {
     /* session TTLs out anyway */
+  }
+}
+
+/**
+ * A silent move for graphical games — Blockcraft's canvas client sends these
+ * instead of typing. Same engine and same live session as `gameMove`, but no
+ * chat bubbles, no streaming and no model call, so clicking can never bury the
+ * conversation or block on the local LLM.
+ */
+export async function gameAction(
+  sessionId: string,
+  text: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; error?: string; state?: Record<string, unknown>; note?: string }> {
+  try {
+    const r = await fetch(apiUrl(`/api/games/${encodeURIComponent(sessionId)}/action`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal,
+    });
+    const j = (await r.json()) as { ok: boolean; error?: string; state?: Record<string, unknown>; note?: string };
+    if (!j?.ok) return { ok: false, error: j?.error ?? `HTTP ${r.status}` };
+    return { ok: true, state: j.state ?? {}, note: j.note ?? "" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

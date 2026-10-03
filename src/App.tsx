@@ -8,6 +8,7 @@ import { ModelPickerModal } from "./components/ModelPickerModal";
 import { ModelCatalogModal } from "./components/ModelCatalogModal";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { MediaStudio } from "./components/MediaStudio";
+import { CreateStudio } from "./components/CreateStudio";
 import { BotsSkillsModal } from "./components/BotsSkillsModal";
 import { GamesModal } from "./components/GamesModal";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -15,6 +16,7 @@ import { LiveWallpaper } from "./components/LiveWallpaper";
 import { GameHud } from "./components/GameHud";
 import {
   endGame,
+  gameAction,
   gameMove,
   startGame,
   type ActiveGame,
@@ -97,6 +99,7 @@ export default function App() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showStudio, setShowStudio] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
   const [showBots, setShowBots] = useState(false);
   const [showGames, setShowGames] = useState(false);
@@ -382,6 +385,26 @@ export default function App() {
     return true;
   };
 
+  /**
+   * A graphical game's move — Blockcraft's canvas calls this on every tap. It
+   * deliberately skips the chat transcript, the busy flag and the model: a kid
+   * mining forty blocks shouldn't produce forty message bubbles or block the
+   * composer. Resolves with the engine's one-line note for the canvas toast.
+   */
+  const gameActionSend = async (text: string): Promise<string | void> => {
+    if (!activeSession || !activeGame) return;
+    const chatId = activeSession.id;
+    const r = await gameAction(activeGame.sessionId, text);
+    if (!r.ok) {
+      setNotice(r.error ?? "Couldn't do that 🥺");
+      return;
+    }
+    setGamesByChat((prev) =>
+      prev[chatId] ? { ...prev, [chatId]: { ...prev[chatId], state: r.state ?? {} } } : prev,
+    );
+    return r.note ?? "";
+  };
+
   const startPlaying = async (game: GameDef) => {
     stop();
     const now = Date.now();
@@ -425,9 +448,17 @@ export default function App() {
     setNotice("Game ended — the Arcade is always open 🎮");
   };
 
-  const playAgain = async (game: ActiveGame) => {
+  // `level` lets the level picker restart on a different level; without it we
+  // repeat the level you're on, so "Play again" never quietly drops you back to
+  // the first one.
+  const playAgain = async (game: ActiveGame, level?: number) => {
     if (!activeSession) return;
-    const r = await startGame(game.gameId, activeSession.id);
+    const on = typeof level === "number" ? level : Number(game.state.level);
+    const r = await startGame(
+      game.gameId,
+      activeSession.id,
+      Number.isInteger(on) ? { level: on } : undefined,
+    );
     if (!r.ok || !r.session) {
       setNotice(r.error ?? "Couldn't restart the game 🥺");
       return;
@@ -447,7 +478,11 @@ export default function App() {
         ),
       );
     }
-    setNotice("New round — good luck! 🍀");
+    setNotice(
+      typeof level === "number"
+        ? `${r.session?.state?.levelName ?? "New level"} — good luck! 🍀`
+        : "New round — good luck! 🍀",
+    );
   };
 
   // --- Sending -----------------------------------------------------------
@@ -879,6 +914,7 @@ export default function App() {
         onOpenBots={() => setShowBots(true)}
         onOpenGames={() => setShowGames(true)}
         onOpenDots={() => setShowDots(true)}
+        onOpenCreate={() => setShowCreate(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -994,6 +1030,8 @@ export default function App() {
             busy={busy}
             onEnd={() => void endActiveGame()}
             onPlayAgain={() => void playAgain(activeGame)}
+            onAction={gameActionSend}
+            onPickLevel={activeGame.gameId === "super-hop" ? (n) => void playAgain(activeGame, n) : undefined}
           />
         )}
 
@@ -1007,7 +1045,11 @@ export default function App() {
             activeGame
               ? activeGame.finished
                 ? "Game over — or start a new one from the Arcade 🎮"
-                : `Type your move for ${activeGame.emoji} ${activeGame.name}…`
+                : activeGame.gameId === "blockcraft"
+                  ? "Build by tapping — or ask Talia for a design: `blueprint cosy cabin`"
+                  : activeGame.gameId === "super-hop"
+                    ? "Play with the arrow keys — or type: `go right`, `hop right`"
+                    : `Type your move for ${activeGame.emoji} ${activeGame.name}…`
               : undefined
           }
         />
@@ -1065,6 +1107,7 @@ export default function App() {
         themeId={themeId}
       />
       <MediaStudio open={showStudio} onClose={() => setShowStudio(false)} />
+      <CreateStudio open={showCreate} onClose={() => setShowCreate(false)} />
       <BotsSkillsModal
         open={showBots}
         onClose={() => setShowBots(false)}

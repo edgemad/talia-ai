@@ -8,6 +8,10 @@ build
 
 # Tauri / Rust
 src-tauri/target
+# The generated Android project is ~650 MB, almost all of it Gradle/Cargo build
+# output. It is recreated by `npm run android:init`, so there is no reason for it
+# to ever reach a commit. The schemas are small and worth keeping.
+src-tauri/gen/android
 src-tauri/gen/schemas
 # staged sidecar binaries (rebuilt by `npm run sidecar` / CI)
 src-tauri/binaries/*

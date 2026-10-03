@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2, Brain, Wand2, Bot, Gamepad2, Sparkles } from "lucide-react";
+import { Plus, Trash2, Brain, Wand2, Bot, Gamepad2, Sparkles, Brush } from "lucide-react";
 import type { ChatSession } from "../types";
 
 // ---------- resizable width (persisted) ---------------------------------------
@@ -29,12 +29,14 @@ function QuickActions({
   onOpenStudio,
   onOpenGames,
   onOpenDots,
+  onOpenCreate,
 }: {
   onOpenMemory: () => void;
   onOpenBots: () => void;
   onOpenStudio: () => void;
   onOpenGames: () => void;
   onOpenDots: () => void;
+  onOpenCreate: () => void;
 }) {
   // 2-column grid at every width — nothing can ever clip, even on a narrow
   // sidebar. Dots is the flagship so it spans both columns.
@@ -44,6 +46,7 @@ function QuickActions({
     { label: "Bots", icon: <Bot size={12} className="text-accent" />, on: onOpenBots, wide: false },
     { label: "Studio", icon: <Wand2 size={12} className="text-accent" />, on: onOpenStudio, wide: false },
     { label: "Games", icon: <Gamepad2 size={12} className="text-accent-2" />, on: onOpenGames, wide: false },
+    { label: "Make", icon: <Brush size={12} className="text-accent" />, on: onOpenCreate, wide: false },
   ];
   return (
     <div className="grid grid-cols-2 gap-1.5">
@@ -77,6 +80,7 @@ export function SessionSidebar({
   onOpenStudio,
   onOpenGames,
   onOpenDots,
+  onOpenCreate,
 }: {
   open: boolean;
   sessions: ChatSession[];
@@ -89,6 +93,7 @@ export function SessionSidebar({
   onOpenStudio: () => void;
   onOpenGames: () => void;
   onOpenDots: () => void;
+  onOpenCreate: () => void;
 }) {
   const [width, setWidth] = useState<number>(loadWidth);
   const dragging = useRef(false);
@@ -151,6 +156,7 @@ export function SessionSidebar({
           onOpenStudio={onOpenStudio}
           onOpenGames={onOpenGames}
           onOpenDots={onOpenDots}
+          onOpenCreate={onOpenCreate}
         />
       </div>
 

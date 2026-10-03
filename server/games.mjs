@@ -12,6 +12,8 @@
 
 import { readCollection, writeCollection } from "./store.mjs";
 import { CATALOGUE } from "./gamePacks.mjs";
+import { blockcraft } from "./blockcraft.mjs";
+import { mario } from "./mario.mjs";
 
 // ---------- tiny helpers -----------------------------------------------------
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -765,6 +767,8 @@ export const BUILTIN_GAMES = [
   { id: "simon", engine: "simon", name: "Simon Memory", emoji: "🧠", tagline: "Watch the pattern, repeat it, level up", category: "Reflex", ages: "5+", needsLlm: false, howTo: "Type the colors back as numbers 1-4." },
   { id: "twenty-questions", engine: "twenty-questions", name: "Twenty Questions", emoji: "🤔", tagline: "Talia thinks of something — outsmart her", category: "Words", ages: "8+", needsLlm: true, howTo: "Ask yes/no questions; type \"guess: ...\" when ready." },
   { id: "story-chain", engine: "story-chain", name: "Story Chain", emoji: "📖", tagline: "Write an adventure together, turn by turn", category: "Story", ages: "6+", needsLlm: true, howTo: "Add 2-3 sentences each turn; Talia continues." },
+  { id: "blockcraft", engine: "blockcraft", name: "Blockcraft", emoji: "🧱", tagline: "A tiny voxel world — mine, build, and let Talia architect it", category: "Build", ages: "5+", needsLlm: true, howTo: "Tap a block to dig it, tap the sky to build. Ask for `blueprint cosy cabin` and fill in Talia's design." },
+  { id: "super-hop", engine: "mario", name: "Super Hop", emoji: "🍄", tagline: "Run, jump and stomp your way to the flag — six worlds to finish", category: "Arcade", ages: "5+", needsLlm: false, howTo: "Arrow keys or WASD to run, Space to jump. Pick any of the six levels under the canvas, or type `levels` in the chat. Or just type `go right` and `jump`." },
 ];
 
 const byId = new Map(BUILTIN_GAMES.map((g) => [g.engine, g]));
@@ -789,6 +793,8 @@ export const ENGINES = {
   simon,
   "twenty-questions": twentyQuestions,
   "story-chain": storyChain,
+  blockcraft,
+  mario,
   quiz: null, // data-driven — created per pack (see makeQuizEngine)
   scramble: null, // data-driven — see makeScrambleEngine
   "llm-rounds": null, // data-driven — see makeLlmRoundsEngine
