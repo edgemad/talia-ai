@@ -29,6 +29,28 @@ export function isLocalUrl(url) {
   }
 }
 
+/**
+ * Normalize a user-supplied base URL for an outbound fetch, or return null if
+ * it isn't a plain http(s) URL. Callers hand this a string straight off the
+ * wire (a Studio probe target, a provider base, a pull endpoint), so before it
+ * becomes a fetch argument it must actually be a URL with a hostname — not
+ * `file:///etc/passwd`, not `data:…`, not `javascript:` and not garbage that
+ * `new URL` can't parse at all. Scheme enforcement is what keeps a crafty
+ * input from escaping the http(s) world undici would otherwise allow.
+ */
+export function safeBaseUrl(url) {
+  const raw = String(url ?? "").trim().replace(/\/+$/, "");
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (!u.hostname) return null;
+    return u.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
 export async function getSettings() {
   const s = (await readCollection(SETTINGS_KEY, {})) ?? {};
   return { offline: !!s.offline || envLocked(), offlineLocked: envLocked() };

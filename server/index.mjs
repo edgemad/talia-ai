@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import http from "node:http";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -12,11 +11,51 @@ import { dotsApi } from "./dotsRoutes.mjs";
 import { startDotsScheduler, stopDotsScheduler } from "./dots.mjs";
 import { ensureAutoStart, stopRuntime } from "./runtime.mjs";
 import { flushNow } from "./store.mjs";
-import { isOffline, isLocalUrl, offlineError } from "./settings.mjs";
+import { isOffline, isLocalUrl, offlineError, safeBaseUrl } from "./settings.mjs";
 import { harden } from "./asyncSafe.mjs";
 
 const app = express();
-app.use(cors());
+
+// --- CORS: who may call this API from a browser? ---------------------------
+// The desktop app and `npm run server` are same-origin (this server serves
+// both the UI and the API), so they need nothing. The Android thin client is
+// cross-origin and must be allowed. But a blanket `*` would let any website
+// the user visits read this API from their own browser — every chat, the
+// memory store and any saved provider key — so the allowlist is exact:
+// requests with no Origin header (curl, the sidecar itself), the app's own
+// origin, Tauri's webview origins and the Vite dev server. Everything else
+// gets no Access-Control-Allow-Origin header, so a browser refuses to read
+// the response; non-browser clients are unaffected.
+const EXTRA_ORIGINS = new Set([
+  "tauri://localhost",        // Tauri custom protocol (macOS)
+  "http://tauri.localhost",   // Tauri custom protocol (Windows/Linux)
+  "https://tauri.localhost",
+  "http://localhost:5173",    // Vite dev server
+  "http://127.0.0.1:5173",
+  "http://localhost:1420",    // Tauri's default dev port
+  "http://127.0.0.1:1420",
+]);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  const sameOrigin =
+    !!origin && !!host && (origin === `http://${host}` || origin === `https://${host}`);
+  if (!origin || sameOrigin || EXTRA_ORIGINS.has(origin)) {
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
+    if (req.method === "OPTIONS") {
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Access-Control-Max-Age", "600");
+      return res.status(204).end();
+    }
+  }
+  next();
+});
+
 app.use(express.json({ limit: "10mb" }));
 harden(app); // async handler throws → JSON errors, never a crashed sidecar
 
@@ -96,8 +135,9 @@ function prettyModelId(id) {
 
 // --- Health of the local LLM provider ----------------------------------
 app.get("/api/provider/health", async (req, res) => {
+  const base = safeBaseUrl(req.query.baseUrl) ?? "http://localhost:11434";
   const cfg = {
-    baseUrl: String(req.query.baseUrl || "http://localhost:11434"),
+    baseUrl: base,
     apiKey: req.query.apiKey ? String(req.query.apiKey) : undefined,
   };
   if ((await isOffline()) && !isLocalUrl(cfg.baseUrl)) {
@@ -123,7 +163,7 @@ app.get("/api/provider/health", async (req, res) => {
 // --- Model discovery ----------------------------------------------------
 // Normalizes provider-specific listing endpoints into [{ id }]
 app.get("/api/provider/models", async (req, res) => {
-  const baseUrl = String(req.query.baseUrl || "http://localhost:11434").replace(/\/+$/, "");
+  const baseUrl = safeBaseUrl(req.query.baseUrl) ?? "http://localhost:11434";
   const apiKey = req.query.apiKey ? String(req.query.apiKey) : undefined;
   const headers = {
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),

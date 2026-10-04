@@ -80,6 +80,7 @@ export function SketchPad() {
 
   const strokes = useRef<Stroke[]>([]);
   const redoStack = useRef<Stroke[]>([]);
+  const noticeTimer = useRef<number | null>(null);
   const [history, setHistory] = useState(0);
   const [redo, setRedo] = useState(0);
   const drawing = useRef<Stroke | null>(null);
@@ -281,8 +282,17 @@ export function SketchPad() {
 
   const flash = (msg: string) => {
     setNotice(msg);
-    window.setTimeout(() => setNotice(""), 2600);
+    // Clear the previous notice's timer first, or a quick second flash would
+    // be wiped early by the first one still counting down. Storing the handle
+    // also lets unmount cancel it instead of firing into a dead component.
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(""), 2600);
   };
+
+  // A timer set just before unmount would otherwise fire into a dead component.
+  useEffect(() => () => {
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+  }, []);
 
   const usedHistory = Math.max(0, history);
 

@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 export const dataDir = process.env.TALIA_DATA_DIR || join(homedir(), ".talia-ai");
 
 const pending = new Map();
+let flushTimer = null;
 
 async function pathFor(collection) {
   const p = join(dataDir, `${collection}.json`);
@@ -27,12 +28,17 @@ export async function readCollection(collection, fallback) {
 /** Debounced atomic write (write temp file, then rename). */
 export function writeCollection(collection, data) {
   pending.set(collection, data);
-  if (pending.size === 1) {
-    setTimeout(flush, 250).unref?.();
+  // One timer covers every collection batched into this debounce window, so
+  // only schedule when the window is otherwise empty — a second timer would
+  // just race the first and find nothing to do.
+  if (pending.size === 1 && !flushTimer) {
+    flushTimer = setTimeout(flush, 250);
+    flushTimer.unref?.();
   }
 }
 
 async function flush() {
+  flushTimer = null;
   const entries = [...pending.entries()];
   pending.clear();
   await Promise.all(
@@ -51,6 +57,9 @@ async function flush() {
 
 /** Immediate flush (used on shutdown). */
 export async function flushNow() {
-  clearTimeout(flush._t);
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
   await flush();
 }

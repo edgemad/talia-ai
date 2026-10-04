@@ -10,7 +10,7 @@
 // message instead of a crash.
 
 import { generateLocalImage, sdStatus } from "./sd.mjs";
-import { isOffline, isLocalUrl, offlineError } from "./settings.mjs";
+import { isOffline, isLocalUrl, offlineError, safeBaseUrl } from "./settings.mjs";
 
 const DEFAULTS = {
   image: process.env.TALIA_SD_URL || "http://127.0.0.1:7860",
@@ -43,6 +43,7 @@ export async function generateImage(
   baseUrl = DEFAULTS.image,
 ) {
   const offline = await isOffline();
+  const fallbackBase = safeBaseUrl(baseUrl) ?? DEFAULTS.image;
   // 1) Talia's own built-in engine first (zero setup), unless the user asked
   //    for a specific external backend in the Studio's advanced controls.
   if (useLocal !== false && !explicitBase) {
@@ -52,14 +53,14 @@ export async function generateImage(
       if (r.ok) return r;
       // Local engine failed but exists → surface its error only if there is
       // no external backend to fall back to; otherwise try A1111 below.
-      const externalUp = !(offline && !isLocalUrl(baseUrl)) && await fetch(`${String(baseUrl).replace(/\/+$/, "")}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) })
+      const externalUp = !(offline && !isLocalUrl(fallbackBase)) && await fetch(`${fallbackBase}/sdapi/v1/options`, { signal: AbortSignal.timeout(1500) })
         .then((r) => r.ok)
         .catch(() => false);
       if (!externalUp) return r;
     }
   }
 
-  const base = String(explicitBase || baseUrl).replace(/\/+$/, "");
+  const base = safeBaseUrl(explicitBase ?? fallbackBase) ?? fallbackBase;
   // Offline Mode allows only on-this-machine servers (loopback / LAN names).
   if (offline && !isLocalUrl(base)) {
     return { ok: false, error: offlineError(`Using the image server at ${base}`) };
@@ -123,7 +124,7 @@ export async function generateImage(
 
 // ---------- Speech (TTS) --------------------------------------------------
 export async function synthesizeSpeech({ text, voice, ttsUrl }, baseUrl = DEFAULTS.tts) {
-  const target = ttsUrl || baseUrl;
+  const target = safeBaseUrl(ttsUrl || baseUrl);
   if (!target) {
     return { ok: false, error: "No TTS server configured. Run Piper (see README) or set TALIA_TTS_URL." };
   }
@@ -164,7 +165,7 @@ export async function generateVideo(
   if (!baseUrl) {
     return { ok: false, error: "No ComfyUI URL configured. Start ComfyUI (see README) or set TALIA_COMFY_URL." };
   }
-  const base = baseUrl.replace(/\/+$/, "");
+  const base = safeBaseUrl(baseUrl) ?? DEFAULTS.comfy;
   if ((await isOffline()) && !isLocalUrl(base)) {
     return { ok: false, error: offlineError("Video rendering") };
   }
@@ -231,7 +232,7 @@ export async function generateVideo(
 export async function mediaHealth({ baseUrl } = {}) {
   const sd = await sdStatus();
   const builtinImage = sd.installed && sd.models.some((m) => m.downloaded);
-  const probeBase = String(baseUrl || DEFAULTS.image).replace(/\/+$/, "");
+  const probeBase = safeBaseUrl(baseUrl) ?? DEFAULTS.image;
   const out = { image: false, imageKind: null, builtinImage, tts: !!DEFAULTS.tts, video: false };
   // Online/Offline toggle in the Studio probes an arbitrary URL through this
   // endpoint (the webview can't always reach the backend directly).

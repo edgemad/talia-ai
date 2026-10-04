@@ -11,7 +11,7 @@ import {
 } from "./memory.mjs";
 import { research, extractiveAnswer } from "./research.mjs";
 import { generateImage, generateVideo, synthesizeSpeech, mediaHealth } from "./media.mjs";
-import { getSettings, setOffline, isOffline, isLocalUrl, offlineError } from "./settings.mjs";
+import { getSettings, setOffline, isOffline, isLocalUrl, offlineError, safeBaseUrl } from "./settings.mjs";
 import { readCollection, writeCollection } from "./store.mjs";
 import {
   BUILTIN_BOTS,
@@ -626,8 +626,12 @@ api.get("/models/catalog", (_req, res) => {
 
 // One-click pull via the provider (Ollama-style). Streams progress lines as SSE.
 api.post("/models/pull", async (req, res) => {
-  const { baseUrl, model } = req.body || {};
-  if (!baseUrl || !model) return res.status(400).json({ ok: false, error: "baseUrl and model required" });
+  const { baseUrl: rawBase, model: rawModel } = req.body || {};
+  const baseUrl = safeBaseUrl(rawBase);
+  const model = String(rawModel ?? "").slice(0, 200).trim();
+  if (!baseUrl || !model) {
+    return res.status(400).json({ ok: false, error: "baseUrl and model required" });
+  }
   if ((await isOffline()) && !isLocalUrl(baseUrl)) {
     return res.status(403).json({ ok: false, error: offlineError("Model pulls") });
   }
@@ -638,7 +642,7 @@ api.post("/models/pull", async (req, res) => {
     Connection: "keep-alive",
   });
   try {
-    const upstream = await fetch(`${baseUrl.replace(/\/+$/, "")}/api/pull`, {
+    const upstream = await fetch(`${baseUrl}/api/pull`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model, stream: true }),
