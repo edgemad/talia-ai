@@ -188,6 +188,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # actions/checkout materialises the checked-out tag as a LOCAL
+          # lightweight tag pointing at the peeled commit, so %(contents)
+          # would return the commit message instead of the annotation. Fetch
+          # the real tag object before reading it.
+          git fetch origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" --no-tags --force
           NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
           if [ -n "$NOTES" ]; then
             gh release edit "$GITHUB_REF_NAME" --notes "$NOTES"
