@@ -9,7 +9,7 @@
     "dev:server": "node server/index.mjs",
     "server": "node server/index.mjs",
     "build": "vite build && node scripts/patch-sw.mjs && node scripts/make-preview.mjs",
-    "build:desktop": "vite build && node scripts/build-sidecar.mjs --tauri",
+    "build:desktop": "vite build && node scripts/patch-sw.mjs && node scripts/build-sidecar.mjs --tauri",
     "sidecar": "node scripts/build-sidecar.mjs --tauri",
     "tauri": "tauri",
     "icons": "node scripts/gen-icons.mjs",
