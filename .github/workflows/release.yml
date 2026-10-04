@@ -167,3 +167,30 @@ jobs:
       - name: Rust check
         working-directory: src-tauri
         run: cargo check
+
+  # tauri-action can only set a fixed releaseBody string, which went stale the
+  # moment a release shipped features the string did not mention. The real
+  # notes already exist - the annotated tag message, which every release here
+  # writes carefully - so after all installers are uploaded, make the release
+  # page say the same thing the tag does. Falls back to the fixed body when a
+  # tag is lightweight and therefore has no annotation to read.
+  release-notes:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - name: Publish release notes from the tag annotation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
+          if [ -n "$NOTES" ]; then
+            gh release edit "$GITHUB_REF_NAME" --notes "$NOTES"
+          else
+            echo "Tag $GITHUB_REF_NAME has no annotation - keeping the default notes."
+          fi
