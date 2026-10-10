@@ -131,7 +131,7 @@ jobs:
           TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           TAURI_ANDROID_KEYSTORE_KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_KEY_ALIAS }}
           TAURI_ANDROID_KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
-        run: cargo tauri android build --target aarch64 --bundle
+        run: cargo tauri android build --target aarch64 --bundle apk,aab
 
       - name: Upload Android APK + AAB to release
         if: matrix.android
@@ -149,6 +149,31 @@ jobs:
             cp "$AAB" "Talia.AI_${VERSION}_aarch64.aab"
             gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.aab" --repo "$GITHUB_REPOSITORY" --clobber
           fi
+
+      # The updater requires a signing key: with `createUpdaterArtifacts` and a
+      # pubkey in tauri.conf.json, `tauri build` FAILS when the private-key
+      # secret is unset. Degrade gracefully instead — unsigned installers that
+      # still work, no updater — and resume signed builds the moment the secret
+      # exists.
+      - name: Disable updater signing when the key secret is absent
+        if: ${{ !matrix.android }}
+        env:
+          # The secrets context isn't readable in step `if:` — map it first.
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_SIGNING_KEY" = "true" ]; then
+            echo "Signing key present — updater artifacts stay enabled."
+            exit 0
+          fi
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            delete c.bundle.createUpdaterArtifacts;
+            delete c.plugins;
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+            console.log('updater config stripped (no signing key secret)');
+          "
 
       - name: Build Tauri app
         if: ${{ !matrix.android }}
