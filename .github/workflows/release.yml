@@ -12,6 +12,12 @@ on:
 permissions:
   contents: write
 
+# One release pipeline at a time: a fix pushed mid-run supersedes the older
+# run instead of racing it for the same release assets.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
@@ -278,6 +284,14 @@ jobs:
           # would return the commit message instead of the annotation. Fetch
           # the real tag object before reading it.
           git fetch origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" --no-tags --force || true  # branch-triggered releases may have no tag object yet -> fallback below
+          # Only an ANNOTATED tag carries real release notes. Branch-triggered
+          # releases get a lightweight tag from GitHub's release API, and
+          # %(contents) on that would return the commit subject — publishing a
+          # random commit message as the release notes. Keep the defaults.
+          if [ "$(git cat-file -t "$GITHUB_REF_NAME" 2>/dev/null)" != "tag" ]; then
+            echo "Tag $GITHUB_REF_NAME is missing or lightweight - keeping the default notes."
+            exit 0
+          fi
           NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
           if [ -n "$NOTES" ]; then
             gh release edit "$GITHUB_REF_NAME" --notes "$NOTES"
