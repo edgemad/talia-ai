@@ -125,6 +125,41 @@ jobs:
             fs.writeFileSync(p, JSON.stringify(c,null,2));
           "
 
+      # The desktop updater needs a signing key: with `createUpdaterArtifacts`
+      # and a pubkey in tauri.conf.json, `tauri build` FAILS when the
+      # TAURI_SIGNING_PRIVATE_KEY secret is unset. Android must never carry the
+      # updater config at all — the Play Store owns Android updates (the Rust
+      # side cfg-excludes the plugin on that target). Degrade gracefully:
+      # unsigned desktop installers that still work, no updater — and resume
+      # signed builds the moment the secret exists. Runs BEFORE any build step
+      # so the Android row is patched in time.
+      - name: Strip updater config (always on Android; on desktop only without the signing key)
+        # Windows runners default to PowerShell; this script is bash.
+        shell: bash
+        env:
+          # The secrets context isn't readable in step `if:` — map it first.
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          IS_ANDROID: ${{ matrix.android }}
+        run: |
+          if [ "$IS_ANDROID" != "true" ] && [ "$HAS_SIGNING_KEY" = "true" ]; then
+            echo "Signing key present — updater artifacts stay enabled."
+            exit 0
+          fi
+          if [ "$IS_ANDROID" = "true" ]; then
+            echo "Android is updated via the Play Store — stripping updater config."
+          else
+            echo "No signing key secret — stripping updater config (unsigned installers)."
+          fi
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            delete c.bundle.createUpdaterArtifacts;
+            delete c.plugins;
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+            console.log('updater config stripped');
+          "
+
       # Sign with the Play App Signing keystore when the secrets are present;
       # unsigned otherwise (the sideload APK still works for testing).
       # `tauri android build` takes --apk / --aab boolean flags (no --bundle).
@@ -160,45 +195,26 @@ jobs:
           test -n "$APK"
           cp "$APK" "Talia.AI_${VERSION}_aarch64.apk"
           if [ -n "$AAB" ]; then cp "$AAB" "Talia.AI_${VERSION}_aarch64.aab"; fi
-          # The release is created in parallel by the desktop rows' tauri-action;
-          # retry so a fast Android build can't lose the race.
-          for attempt in 1 2 3 4 5 6; do
+          # The release is created in parallel by the desktop rows' tauri-action,
+          # which can take far longer than the Android build. Wait up to 30
+          # minutes, then FAIL LOUDLY if it never appears — a silent pass here
+          # would publish a release missing its Android artifact.
+          uploaded=""
+          for attempt in $(seq 1 60); do
             if gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.apk" --repo "$GITHUB_REPOSITORY" --clobber; then
               if [ -n "$AAB" ]; then
                 gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.aab" --repo "$GITHUB_REPOSITORY" --clobber || true
               fi
+              uploaded=1
               break
             fi
             echo "Release not published yet (attempt $attempt) — waiting…"
             sleep 30
           done
-
-      # The updater requires a signing key: with `createUpdaterArtifacts` and a
-      # pubkey in tauri.conf.json, `tauri build` FAILS when the private-key
-      # secret is unset. Degrade gracefully instead — unsigned installers that
-      # still work, no updater — and resume signed builds the moment the secret
-      # exists.
-      - name: Disable updater signing when the key secret is absent
-        if: ${{ !matrix.android }}
-        # Windows runners default to PowerShell; this script is bash.
-        shell: bash
-        env:
-          # The secrets context isn't readable in step `if:` — map it first.
-          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-        run: |
-          if [ "$HAS_SIGNING_KEY" = "true" ]; then
-            echo "Signing key present — updater artifacts stay enabled."
-            exit 0
+          if [ -z "$uploaded" ]; then
+            echo "Release $GITHUB_REF_NAME never appeared — Android artifact NOT uploaded."
+            exit 1
           fi
-          node -e "
-            const fs = require('fs');
-            const p = 'src-tauri/tauri.conf.json';
-            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
-            delete c.bundle.createUpdaterArtifacts;
-            delete c.plugins;
-            fs.writeFileSync(p, JSON.stringify(c, null, 2));
-            console.log('updater config stripped (no signing key secret)');
-          "
 
       - name: Build Tauri app
         if: ${{ !matrix.android }}
@@ -261,7 +277,7 @@ jobs:
           # lightweight tag pointing at the peeled commit, so %(contents)
           # would return the commit message instead of the annotation. Fetch
           # the real tag object before reading it.
-          git fetch origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" --no-tags --force
+          git fetch origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" --no-tags --force || true  # branch-triggered releases may have no tag object yet -> fallback below
           NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
           if [ -n "$NOTES" ]; then
             gh release edit "$GITHUB_REF_NAME" --notes "$NOTES"
