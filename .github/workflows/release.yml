@@ -127,15 +127,27 @@ jobs:
 
       # Sign with the Play App Signing keystore when the secrets are present;
       # unsigned otherwise (the sideload APK still works for testing).
-      - name: Build Android APK + AAB (Play Store bundle)
+      # `tauri android build` takes --apk / --aab boolean flags (no --bundle).
+      # AAB additionally needs a signing keystore, so it's built only when the
+      # keystore secrets exist; the sideload APK always builds.
+      - name: Build Android APK (+ AAB when a signing keystore is configured)
         if: matrix.android
         working-directory: src-tauri
+        shell: bash
         env:
+          HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_PATH != '' }}
           TAURI_ANDROID_KEYSTORE_PATH: ${{ secrets.ANDROID_KEYSTORE_PATH }}
           TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           TAURI_ANDROID_KEYSTORE_KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_KEY_ALIAS }}
           TAURI_ANDROID_KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
-        run: cargo tauri android build --target aarch64 --bundle apk,aab
+        run: |
+          if [ "$HAS_KEYSTORE" = "true" ]; then
+            cargo tauri android build --target aarch64 --apk --aab
+          else
+            echo "No keystore secret configured — building the sideload APK only."
+            echo "(Set ANDROID_KEYSTORE_* secrets to produce the Play Store AAB.)"
+            cargo tauri android build --target aarch64 --apk
+          fi
 
       - name: Upload Android APK + AAB to release
         if: matrix.android
@@ -168,6 +180,8 @@ jobs:
       # exists.
       - name: Disable updater signing when the key secret is absent
         if: ${{ !matrix.android }}
+        # Windows runners default to PowerShell; this script is bash.
+        shell: bash
         env:
           # The secrets context isn't readable in step `if:` — map it first.
           HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}

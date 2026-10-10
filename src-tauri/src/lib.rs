@@ -11,6 +11,10 @@ use tauri::Manager;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
+// `app.updater_builder()` comes from this trait — without it in scope the
+// auto-update loop won't compile. Desktop-only, like the plugin itself.
+#[cfg(not(target_os = "android"))]
+use tauri_plugin_updater::UpdaterExt;
 
 const API_PORT: u16 = 8787;
 
