@@ -1,0 +1,16 @@
+Talia AI v0.12.0 — standalone package
+=====================================
+Prebuilt web UI (dist/) + server. Only runtime dependency is express.
+
+Run it (Node.js >= 18):
+  1. npm install --omit=dev      # fetches express only (~1s)
+  2. npm run server              # -> http://localhost:8787
+
+Then open Settings -> Built-in AI and tap quickstart: it downloads the local
+engine and a model sized for your RAM. No drivers, no Ollama, no admin rights.
+
+This archive ships the web/standalone edition. Desktop installers (.dmg/.exe/
+.AppImage) and the Android AAB are produced by CI from a v* release tag.
+
+Signing: the updater verifies releases against the PUBLIC key baked into
+src-tauri/tauri.conf.json. The matching PRIVATE key is never included here.
