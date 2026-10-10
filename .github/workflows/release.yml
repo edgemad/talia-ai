@@ -3,6 +3,10 @@ name: Desktop installers
 on:
   push:
     tags: ["v*"]
+    # Also allow a release from a `v*` BRANCH push — used when the release
+    # tooling can only push branches (tag pushes go through the same path and
+    # produce the identical GitHub release named after the ref).
+    branches: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -143,12 +147,19 @@ jobs:
           AAB=$(find src-tauri/gen/android/app/build/outputs/bundle -name '*.aab' | head -n 1)
           test -n "$APK"
           cp "$APK" "Talia.AI_${VERSION}_aarch64.apk"
-          gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.apk" --repo "$GITHUB_REPOSITORY" --clobber
-          # The .aab is what the Play Console accepts; upload it alongside.
-          if [ -n "$AAB" ]; then
-            cp "$AAB" "Talia.AI_${VERSION}_aarch64.aab"
-            gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.aab" --repo "$GITHUB_REPOSITORY" --clobber
-          fi
+          if [ -n "$AAB" ]; then cp "$AAB" "Talia.AI_${VERSION}_aarch64.aab"; fi
+          # The release is created in parallel by the desktop rows' tauri-action;
+          # retry so a fast Android build can't lose the race.
+          for attempt in 1 2 3 4 5 6; do
+            if gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.apk" --repo "$GITHUB_REPOSITORY" --clobber; then
+              if [ -n "$AAB" ]; then
+                gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.aab" --repo "$GITHUB_REPOSITORY" --clobber || true
+              fi
+              break
+            fi
+            echo "Release not published yet (attempt $attempt) — waiting…"
+            sleep 30
+          done
 
       # The updater requires a signing key: with `createUpdaterArtifacts` and a
       # pubkey in tauri.conf.json, `tauri build` FAILS when the private-key
