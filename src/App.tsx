@@ -53,6 +53,7 @@ import {
 } from "./lib/exportChat";
 import {
   fetchLessons,
+  pullModel,
   recallMemory,
   rememberExchange,
   rememberText,
@@ -675,9 +676,10 @@ export default function App() {
               ),
             );
           },
-          onError: (msg) => {
+          onError: (msg, info) => {
             // User pressed stop — don't paint an error over the abort.
             if (stopFlag.current) return;
+            const missing = info?.code === "model_not_found";
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId
@@ -687,7 +689,10 @@ export default function App() {
                         m.id === assistantId
                           ? {
                               ...m,
-                              content: `Oh no, I couldn't reach your model server 🥺 — ${msg}\n\nDouble-check that it's running, then try again. I'll be right here! 🌸`,
+                              content: missing
+                                ? `${info?.model ?? "That model"} isn't downloaded on your server yet 🌱`
+                                : `Oh no, I couldn't reach your model server 🥺 — ${msg}\n\nDouble-check that it's running, then try again. I'll be right here! 🌸`,
+                              error: missing ? { code: "model_not_found", model: info?.model ?? null } : undefined,
                             }
                           : m,
                       ),
@@ -805,16 +810,25 @@ export default function App() {
             ),
           );
         },
-        onError: (msg) => {
+        onError: (msg, info) => {
           // User pressed stop — don't paint an error over the abort.
           if (stopFlag.current) return;
+          const missing = info?.code === "model_not_found";
           setSessions((prev) =>
             prev.map((s) =>
               s.id === sessionId
                 ? {
                     ...s,
                     messages: s.messages.map((m) =>
-                      m.id === assistantId ? { ...m, content: `The skill hit a snag 🥺 — ${msg}` } : m,
+                      m.id === assistantId
+                        ? {
+                            ...m,
+                            content: missing
+                              ? `${info?.model ?? "That model"} isn't downloaded on your server yet 🌱`
+                              : `The skill hit a snag 🥺 — ${msg}`,
+                            error: missing ? { code: "model_not_found", model: info?.model ?? null } : undefined,
+                          }
+                        : m,
                     ),
                   }
                 : s,
@@ -830,6 +844,29 @@ export default function App() {
   };
 
   // Re-answer an assistant message from the conversation so far.
+  // One-click recovery: the provider said the model isn't on disk — pull it
+  // (streaming progress into the notice bar), then retry the failed answer.
+  const pullModelAndRetry = async (messageId: string, model: string) => {
+    const baseUrl = settings.provider?.baseUrl || "http://localhost:11434";
+    setNotice(`⬇️ Pulling ${model} — this can take a few minutes…`);
+    const r = await pullModel(baseUrl, model, (status, pct) => {
+      setNotice(`⬇️ ${model}: ${status}${pct !== null ? ` ${pct}%` : ""}`);
+    });
+    if (r.ok) {
+      setNotice(`✨ ${model} is ready — finishing your answer…`);
+      // Clear the error state, then re-run this answer.
+      setSessions((prev) =>
+        prev.map((s) => ({
+          ...s,
+          messages: s.messages.map((m) => (m.id === messageId ? { ...m, error: undefined } : m)),
+        })),
+      );
+      regenerateMessage(messageId);
+    } else {
+      setNotice(`The pull didn't finish 🥺 — ${r.error ?? "try again from Settings → Models"}`);
+    }
+  };
+
   const regenerateMessage = (messageId: string) => {
     if (busy) return;
     void send("", { regenerateOf: messageId });
@@ -1046,6 +1083,11 @@ export default function App() {
                     onRemember={rememberOne}
                     onFeedback={feedbackOne}
                     onRegenerate={m.role === "assistant" ? (msg) => regenerateMessage(msg.id) : undefined}
+                    onPullModel={
+                      m.role === "assistant" && m.error?.code === "model_not_found" && m.error.model
+                        ? (modelName) => pullModelAndRetry(m.id, modelName)
+                        : undefined
+                    }
                   />
                 ))}
               </AnimatePresence>

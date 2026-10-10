@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProviderRequest, validateProviderConfig } from "../server/provider.mjs";
+import { buildProviderRequest, validateProviderConfig, classifyUpstreamError } from "../server/provider.mjs";
 
 describe("buildProviderRequest", () => {
   it("appends /v1/chat/completions to plain Ollama URLs", () => {
@@ -61,5 +61,51 @@ describe("validateProviderConfig", () => {
     expect(validateProviderConfig(null)).toBe(false);
     expect(validateProviderConfig({ baseUrl: "not a url" })).toBe(false);
     expect(validateProviderConfig({ baseUrl: "ftp://x" })).toBe(false);
+  });
+});
+
+describe("classifyUpstreamError", () => {
+  const ollamaMissing = JSON.stringify({
+    error: { message: 'model "dolphin-mistral:7b" not found, try pulling it first', type: "not_found_error" },
+  });
+
+  it("recognises Ollama's missing-model 404 and names the model", () => {
+    const r = classifyUpstreamError(404, ollamaMissing, "ignored-when-quoted");
+    expect(r.code).toBe("model_not_found");
+    expect(r.model).toBe("dolphin-mistral:7b");
+    expect(r.message).toContain("dolphin-mistral:7b");
+    expect(r.message).toContain("Pull");
+  });
+
+  it("falls back to the requested model when the body doesn't name one", () => {
+    const r = classifyUpstreamError(404, '{"error":{"message":"model not found"}}', "qwen2.5:3b");
+    expect(r.code).toBe("model_not_found");
+    expect(r.model).toBe("qwen2.5:3b");
+  });
+
+  it("handles LM Studio-style 404s", () => {
+    const r = classifyUpstreamError(404, '{"error":{"message":"Model not found"}}', "phi3:mini");
+    expect(r.code).toBe("model_not_found");
+    expect(r.model).toBe("phi3:mini");
+  });
+
+  it("leaves auth and server errors as generic provider errors", () => {
+    const auth = classifyUpstreamError(401, '{"error":{"message":"invalid api key"}}', "gpt-4o");
+    expect(auth.code).toBe("provider_error");
+    expect(auth.model).toBeNull();
+    expect(auth.message).toContain("401");
+
+    // 404 that clearly isn't about a model (unknown endpoint) stays generic.
+    const notFound = classifyUpstreamError(404, '{"error":{"message":"no such route"}}', "x");
+    expect(notFound.code).toBe("provider_error");
+
+    const server = classifyUpstreamError(500, "boom", "x");
+    expect(server.code).toBe("provider_error");
+    expect(server.message).toContain("500");
+  });
+
+  it("never lets a huge body bloat the message", () => {
+    const r = classifyUpstreamError(500, "x".repeat(5000), "x");
+    expect(r.message.length).toBeLessThan(500);
   });
 });

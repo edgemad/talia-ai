@@ -14,3 +14,15 @@ export declare function buildProviderRequest(
 ): Request;
 
 export declare function validateProviderConfig(provider: ProviderLike | null | undefined): boolean;
+
+export interface ClassifiedProviderError {
+  message: string;
+  code: "model_not_found" | "provider_error";
+  model: string | null;
+}
+
+export declare function classifyUpstreamError(
+  status: number,
+  bodyText: string,
+  fallbackModel?: string,
+): ClassifiedProviderError;

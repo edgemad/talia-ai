@@ -3,7 +3,7 @@ import http from "node:http";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { buildProviderRequest, validateProviderConfig } from "./provider.mjs";
+import { buildProviderRequest, validateProviderConfig, classifyUpstreamError } from "./provider.mjs";
 import { encodeSSE } from "./sse.mjs";
 import { api } from "./routes.mjs";
 import { runtimeApi } from "./runtimeRoutes.mjs";
@@ -235,8 +235,13 @@ app.post("/api/chat", async (req, res) => {
     const upstream = await fetch(buildProviderRequest(provider, messages, model));
     if (!upstream.ok || !upstream.body) {
       const text = await upstream.text().catch(() => "");
+      // A missing local model is a common, recoverable state — classify it so
+      // the UI can offer a one-click pull instead of showing a raw 404.
+      const info = classifyUpstreamError(upstream.status || 502, text, model);
       return res.status(upstream.status || 502).json({
-        error: `Provider responded ${upstream.status}: ${text.slice(0, 500)}`,
+        error: info.message,
+        code: info.code,
+        model: info.model,
       });
     }
 

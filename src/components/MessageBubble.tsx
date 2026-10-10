@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { Brain, Check, Copy, RefreshCw, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
+import { Brain, Check, Copy, Download, RefreshCw, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
 import type { ChatMessage } from "../types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -24,6 +24,7 @@ export function MessageBubble({
   onRemember,
   onRegenerate,
   onFeedback,
+  onPullModel,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
@@ -31,6 +32,8 @@ export function MessageBubble({
   onRemember?: (m: ChatMessage) => void;
   onRegenerate?: (m: ChatMessage) => void;
   onFeedback?: (m: ChatMessage, rating: "up" | "down") => void;
+  /** Offer a one-click model pull when the provider says the model is missing. */
+  onPullModel?: (model: string) => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -119,6 +122,19 @@ export function MessageBubble({
               </a>
             ))}
           </div>
+        )}
+
+        {!isUser && message.error?.code === "model_not_found" && message.error.model && onPullModel && (
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={() => onPullModel(message.error!.model!)}
+            className="glass-sheen mt-1 flex items-center gap-2 rounded-2xl border px-3 py-2 text-[12px] font-bold transition hover:brightness-105"
+            style={{ borderColor: "var(--accent-2)", background: "var(--surface)", color: "var(--text)" }}
+            title={`Download ${message.error.model} into your local server`}
+          >
+            <Download size={13} className="text-accent-2" />
+            Pull <span className="font-mono">{message.error.model}</span> into my server — then I'll retry
+          </motion.button>
         )}
 
         {!isStreaming && (

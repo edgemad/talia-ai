@@ -1,10 +1,18 @@
 import type { ProviderConfig, Role } from "../types";
 import { apiUrl } from "./appMode";
 
+/** Extra structure the server attaches to a failed stream. */
+export interface StreamErrorInfo {
+  /** "model_not_found" when the local server is missing the selected model. */
+  code?: string;
+  /** The model the provider complained about, when it named one. */
+  model?: string | null;
+}
+
 export interface StreamHandlers {
   onToken: (token: string) => void;
   onDone: (reason: "done" | "stopped" | "error") => void;
-  onError: (message: string) => void;
+  onError: (message: string, info?: StreamErrorInfo) => void;
 }
 
 /** POST to our proxy and consume the normalized SSE token stream. */
@@ -37,13 +45,15 @@ export async function streamChat(
 
   if (!res.ok || !res.body) {
     let msg = `Server error ${res.status}`;
+    let info: StreamErrorInfo | undefined;
     try {
       const j = await res.json();
       if (j?.error) msg = j.error;
+      if (j?.code) info = { code: j.code, model: j.model ?? null };
     } catch {
       /* keep default */
     }
-    handlers.onError(msg);
+    handlers.onError(msg, info);
     handlers.onDone("error");
     return;
   }
@@ -77,7 +87,10 @@ export async function streamChat(
               return;
             }
           } else if (evt.type === "error") {
-            handlers.onError(evt.error ?? "Unknown stream error");
+            handlers.onError(evt.error ?? "Unknown stream error", {
+              code: evt.code,
+              model: evt.model ?? null,
+            });
             handlers.onDone("error");
             return;
           }

@@ -38,6 +38,13 @@ export interface MediaAttachment {
   mime?: string;
 }
 
+export interface ChatErrorInfo {
+  /** "model_not_found" when the provider is missing the selected model. */
+  code?: string;
+  /** The model the provider complained about, when it named one. */
+  model?: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   role: Role;
@@ -46,6 +53,8 @@ export interface ChatMessage {
   createdAt: number;
   media?: MediaAttachment;
   sources?: ResearchSource[];
+  /** Set when this answer failed in a way the UI can offer to fix. */
+  error?: ChatErrorInfo;
 }
 
 export interface ResearchSource {

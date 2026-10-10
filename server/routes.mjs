@@ -21,7 +21,7 @@ import {
   saveBot,
   deleteBot,
 } from "./bots.mjs";
-import { buildProviderRequest, validateProviderConfig } from "./provider.mjs";
+import { buildProviderRequest, validateProviderConfig, classifyUpstreamError } from "./provider.mjs";
 import {
   listGames,
   getPlayableGame,
@@ -111,7 +111,9 @@ api.post("/skills/:id/run", async (req, res) => {
     const upstream = await fetch(buildProviderRequest(provider, messages, model));
     if (!upstream.ok || !upstream.body) {
       const t = await upstream.text().catch(() => "");
-      res.write(`event: error\ndata: ${JSON.stringify({ error: `Provider responded ${upstream.status}: ${t.slice(0, 300)}` })}\n\n`);
+      // Classify so a missing local model becomes a one-click pull in the UI.
+      const info = classifyUpstreamError(upstream.status || 502, t, model);
+      res.write(`event: error\ndata: ${JSON.stringify({ error: info.message, code: info.code, model: info.model })}\n\n`);
       return res.end();
     }
     const reader = upstream.body.getReader();
