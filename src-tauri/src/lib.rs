@@ -111,7 +111,7 @@ fn spawn_auto_updater(app: tauri::AppHandle) {
                         move |chunk, total| {
                             // Log download progress in ~25% steps, not every chunk.
                             if let Some(_t) = total {
-                                let pct = (chunk.saturating_mul(100) / _t.max(1)) as u8;
+                                let pct = ((chunk as u64).saturating_mul(100) / _t.max(1)) as u8;
                                 let bucket = (pct / 25) * 25;
                                 if bucket != last_logged {
                                     last_logged = bucket;
@@ -263,6 +263,9 @@ pub fn run() {
                 // offline shell (dist/index.html), which shows the offline banner.
 
                 // Kick off background self-update now that the UI is settled.
+                // cfg-gated: Android gets its updates from the Play Store, and
+                // the updater crate isn't even compiled into that target.
+                #[cfg(not(target_os = "android"))]
                 spawn_auto_updater(app.handle().clone());
             }
             Ok(())
