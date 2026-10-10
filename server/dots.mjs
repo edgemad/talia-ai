@@ -17,6 +17,7 @@ import { readCollection, writeCollection } from "./store.mjs";
 import { rememberFact, recall } from "./memory.mjs";
 import { research } from "./research.mjs";
 import { isOffline, isLocalUrl, offlineError } from "./settings.mjs";
+import { recordFeedback as recordLearningFeedback, listLessons, buildLessonsPrompt, bumpUses } from "./learning.mjs";
 
 const COLLECTION = "dots";
 
@@ -87,7 +88,7 @@ export function createDotShape(input = {}, now = nowMs()) {
 }
 
 /** The standing brief a dot wakes up with every session. */
-export function buildDotSystemPrompt(dot, { memories = [], today = new Date() } = {}) {
+export function buildDotSystemPrompt(dot, { memories = [], lessons = [], today = new Date() } = {}) {
   const lines = [
     `You are ${dot.emoji || "🔵"} ${dot.name}, an always-on agent (a "dot") created by the user to make progress on a standing goal.`,
     ``,
@@ -102,6 +103,8 @@ export function buildDotSystemPrompt(dot, { memories = [], today = new Date() } 
     lines.push(``, `Relevant things you remember about the user:`);
     for (const m of memories) lines.push(`- ${m.text}`);
   }
+  const lessonsBlock = buildLessonsPrompt(lessons);
+  if (lessonsBlock) lines.push(``, lessonsBlock);
   lines.push(
     ``,
     `How you work:`,
@@ -472,7 +475,10 @@ export async function runDot(dot, { maxSources = 4 } = {}) {
   }
 
   const memories = await recall(dot.goal, { limit: 5 });
-  const system = buildDotSystemPrompt(dot, { memories });
+  const lessons = await listLessons({ query: dot.goal, limit: 4 }).catch(() => []);
+  // A lesson that reaches a dot's prompt has earned a use.
+  if (lessons.length) await bumpUses(lessons.map((l) => l.id)).catch(() => {});
+  const system = buildDotSystemPrompt(dot, { memories, lessons });
   let messages = [
     { role: "system", content: system },
     { role: "user", content: buildDotUserPrompt(dot) },
@@ -618,6 +624,13 @@ export async function recordFeedback(id, { rating, note }) {
   if (!dot) throw new Error("dot not found");
   applyFeedback(dot, { rating, note });
   persist();
+  // Dot feedback also teaches the GLOBAL learning engine, so a lesson learned
+  // from one dot's report shapes every future chat and dot alike.
+  try {
+    await recordLearningFeedback({ rating, note, origin: `dot:${id}` });
+  } catch {
+    /* learning is best-effort */
+  }
   emitDotEvent({ kind: "feedback", dotId: dot.id });
   return publicDot(dot);
 }

@@ -82,6 +82,16 @@ export interface MemoryItem {
   score?: number;
 }
 
+export interface Lesson {
+  id: string;
+  text: string;
+  kind: "approach" | "correction" | "preference";
+  origin: string;
+  strength: number;
+  lastAt: number;
+  score?: number;
+}
+
 export interface CatalogModel {
   id: string;
   name: string;

@@ -16,3 +16,7 @@ src-tauri/gen/schemas
 # staged sidecar binaries (rebuilt by `npm run sidecar` / CI)
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
+
+# Tauri updater signing key — NEVER commit. Keep a backup offline; set it as
+# the TAURI_SIGNING_PRIVATE_KEY secret in CI.
+.tauri-signing/

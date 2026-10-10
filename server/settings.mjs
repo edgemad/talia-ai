@@ -53,7 +53,13 @@ export function safeBaseUrl(url) {
 
 export async function getSettings() {
   const s = (await readCollection(SETTINGS_KEY, {})) ?? {};
-  return { offline: !!s.offline || envLocked(), offlineLocked: envLocked() };
+  return {
+    offline: !!s.offline || envLocked(),
+    offlineLocked: envLocked(),
+    // 🔄 Auto-update Talia's built-in engine in the background. Opt out with
+    // TALIA_ENGINE_AUTOUPDATE=0 (or the Settings toggle).
+    autoUpdateEngine: s.autoUpdateEngine !== false && process.env.TALIA_ENGINE_AUTOUPDATE !== "0",
+  };
 }
 
 export async function isOffline() {
@@ -64,6 +70,12 @@ export async function setOffline(on) {
   if (envLocked()) return getSettings();
   const s = (await readCollection(SETTINGS_KEY, {})) ?? {};
   writeCollection(SETTINGS_KEY, { ...s, offline: !!on });
+  return getSettings();
+}
+
+export async function setAutoUpdateEngine(on) {
+  const s = (await readCollection(SETTINGS_KEY, {})) ?? {};
+  writeCollection(SETTINGS_KEY, { ...s, autoUpdateEngine: !!on });
   return getSettings();
 }
 

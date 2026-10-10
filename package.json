@@ -1,9 +1,9 @@
 {
   "name": "talia-ai",
   "private": true,
-  "version": "0.11.2",
+  "version": "0.12.0",
   "type": "module",
-  "description": "Talia AI \u2014 an adorably cozy local LLM chat companion for Ollama and any OpenAI-compatible server.",
+  "description": "Talia AI — an adorably cozy local LLM chat companion for Ollama and any OpenAI-compatible server.",
   "scripts": {
     "dev": "vite",
     "dev:server": "node server/index.mjs",
@@ -17,9 +17,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "android:init": "tauri android init",
+    "android:init": "tauri android init && node scripts/android-play.mjs",
     "android:apk": "tauri android build --apk --target aarch64",
-    "android:apk:debug": "tauri android build --debug --apk --target aarch64"
+    "android:apk:debug": "tauri android build --debug --apk --target aarch64",
+    "android:bundle": "tauri android build --bundle --target aarch64",
+    "android:bundle:release": "tauri android build --bundle --target aarch64"
   },
   "dependencies": {
     "express": "^4.21.2"

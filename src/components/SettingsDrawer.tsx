@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ExternalLink, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Drawer } from "./ui";
@@ -6,6 +6,7 @@ import { Mascot } from "./Mascot";
 import { DEFAULT_SYSTEM_PROMPT } from "../lib/constants";
 import { PROVIDER_PRESETS, guessPreset, presetById } from "../lib/providers";
 import { LocalAiPanel } from "./LocalAiPanel";
+import { apiUrl } from "../lib/appMode";
 import type { CustomModelPreset, Settings } from "../types";
 
 function Toggle({
@@ -81,6 +82,32 @@ export function SettingsDrawer({
     temperature: 0.7,
   });
 
+  // The auto-update toggle lives server-side (it gates the background engine
+  // updater), so read it when the drawer opens and write it straight back.
+  const [autoUpdate, setAutoUpdate] = useState(true);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    fetch(apiUrl("/api/settings"))
+      .then((r) => r.json())
+      .then((j) => {
+        if (alive && typeof j?.autoUpdateEngine === "boolean") setAutoUpdate(j.autoUpdateEngine);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
+  const setAutoUpdateAndSync = (v: boolean) => {
+    setAutoUpdate(v);
+    fetch(apiUrl("/api/settings"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoUpdateEngine: v }),
+    }).catch(() => {});
+  };
+
   const setProvider = (patch: Partial<Settings["provider"]>) =>
     onChange({ ...settings, provider: { ...settings.provider, ...patch } });
 
@@ -108,6 +135,21 @@ export function SettingsDrawer({
               settings.offline
                 ? "Everything on this machine keeps working: chats, images, memory, games. Update checks, research, cloud providers and downloads are paused."
                 : "Talia checks for updates, researches the web and may download engines or models when needed. Local AI always stays local."
+            }
+          />
+        </section>
+
+        {/* Updates: keep Talia (and her engine) fresh on their own */}
+        <section className="flex flex-col gap-2.5">
+          <SectionTitle color="var(--accent-2)">🔄 Updates</SectionTitle>
+          <Toggle
+            checked={autoUpdate}
+            onChange={setAutoUpdateAndSync}
+            label={autoUpdate ? "✨ Auto-update is on" : "🔕 Auto-update is off"}
+            hint={
+              autoUpdate
+                ? "The desktop app updates itself with a signed installer; Android updates through the Play Store. Talia's built-in engine also refreshes itself in the background."
+                : "Talia will still tell you when a new version is ready, but nothing downloads on its own."
             }
           />
         </section>

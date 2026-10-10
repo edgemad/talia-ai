@@ -52,10 +52,12 @@ import {
   timestampSlug,
 } from "./lib/exportChat";
 import {
+  fetchLessons,
   recallMemory,
   rememberExchange,
   rememberText,
   runResearch,
+  sendLessonFeedback,
   speakText,
 } from "./lib/serverApi";
 import { armDots } from "./lib/dotsApi";
@@ -572,6 +574,17 @@ export default function App() {
         }
       }
 
+      // 1b) Lessons learned from feedback (self-taught) — respect silently.
+      if (promptText) {
+        const lessons = await fetchLessons(promptText, 5);
+        if (lessons.length > 0) {
+          systemParts.push(
+            "Lessons you've learned from the user's feedback (respect these silently — never quote this list back):\n" +
+              lessons.map((l) => `- ${l.text}`).join("\n"),
+          );
+        }
+      }
+
       // 2) Research mode (slower, web) — gracefully skipped when offline
       if (settings.ragEnabled && promptText) {
         if (!netOnline) {
@@ -886,6 +899,29 @@ export default function App() {
     setNotice("Talia will remember that 🧠💗");
   };
 
+  const feedbackOne = async (m: ChatMessage, rating: "up" | "down") => {
+    // The user's most recent question gives the lesson its context.
+    const idx = activeSession?.messages.findIndex((x) => x.id === m.id) ?? -1;
+    const prevUser =
+      idx > 0 ? [...activeSession!.messages.slice(0, idx)].reverse().find((x) => x.role === "user") : null;
+    try {
+      const r = await sendLessonFeedback({
+        rating,
+        excerpt: (prevUser?.content ?? "").slice(0, 300),
+        sessionId: activeSession?.id ?? null,
+      });
+      setNotice(
+        rating === "up"
+          ? "Yay — Talia'll keep doing that 🎓"
+          : r.lesson
+            ? "Got it — Talia learned a lesson from that 🎓"
+            : "Noted — give her a tip next time and she'll learn it faster 💗",
+      );
+    } catch {
+      /* offline — the button still gives visual feedback */
+    }
+  };
+
   const allModels = useMemo(() => {
     const list: DiscoveredModel[] = models.map((m) => ({ id: m.id }));
     for (const c of settings.customModels) {
@@ -1008,6 +1044,7 @@ export default function App() {
                     isStreaming={m.id === streamingId}
                     theme={themeId}
                     onRemember={rememberOne}
+                    onFeedback={feedbackOne}
                     onRegenerate={m.role === "assistant" ? (msg) => regenerateMessage(msg.id) : undefined}
                   />
                 ))}

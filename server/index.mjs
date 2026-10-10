@@ -9,9 +9,11 @@ import { api } from "./routes.mjs";
 import { runtimeApi } from "./runtimeRoutes.mjs";
 import { dotsApi } from "./dotsRoutes.mjs";
 import { startDotsScheduler, stopDotsScheduler } from "./dots.mjs";
+import { startLearningScheduler, stopLearningScheduler } from "./learning.mjs";
 import { ensureAutoStart, stopRuntime } from "./runtime.mjs";
 import { flushNow } from "./store.mjs";
 import { isOffline, isLocalUrl, offlineError, safeBaseUrl } from "./settings.mjs";
+import { startEngineAutoUpdate, stopEngineAutoUpdate } from "./updates.mjs";
 import { harden } from "./asyncSafe.mjs";
 
 const app = express();
@@ -297,6 +299,8 @@ async function shutdown(signal) {
   console.log(`\n🌸 ${signal} — saving Talia's memories…`);
   try {
     stopDotsScheduler();
+    stopLearningScheduler();
+    stopEngineAutoUpdate();
     stopRuntime();
     await flushNow();
   } finally {
@@ -326,6 +330,12 @@ server.listen(PORT, BIND, () => {
   if (process.env.TALIA_NO_AUTOSTART !== "1") void ensureAutoStart();
   // Wake any due Dots on their own clock (kill switch: TALIA_DOTS_DISABLED=1).
   startDotsScheduler();
+  // 🎓 Let Talia study between visits: distill feedback into lessons (kill
+  // switch: TALIA_LEARNING_DISABLED=1).
+  startLearningScheduler();
+  // 🔄 Keep her built-in engine fresh in the background (opt out:
+  // TALIA_ENGINE_AUTOUPDATE=0 or Settings → Auto-update).
+  startEngineAutoUpdate();
 });
 
 // Built-in self test (used by the sidecar build smoke test and CI):

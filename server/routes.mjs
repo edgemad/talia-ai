@@ -11,7 +11,7 @@ import {
 } from "./memory.mjs";
 import { research, extractiveAnswer } from "./research.mjs";
 import { generateImage, generateVideo, synthesizeSpeech, mediaHealth } from "./media.mjs";
-import { getSettings, setOffline, isOffline, isLocalUrl, offlineError, safeBaseUrl } from "./settings.mjs";
+import { getSettings, setOffline, setAutoUpdateEngine, isOffline, isLocalUrl, offlineError, safeBaseUrl } from "./settings.mjs";
 import { readCollection, writeCollection } from "./store.mjs";
 import {
   BUILTIN_BOTS,
@@ -34,6 +34,17 @@ import {
   sanitizeGameState,
 } from "./games.mjs";
 import { CATALOGUE } from "./gamePacks.mjs";
+import {
+  recordFeedback,
+  teach,
+  listLessons,
+  forgetLesson,
+  forgetAllLessons,
+  learningStatus,
+  buildLessonsPrompt,
+  bumpUses,
+  runConsolidation,
+} from "./learning.mjs";
 
 export const api = Router();
 harden(api); // async handler throws → JSON errors, never a crashed sidecar
@@ -431,6 +442,60 @@ api.delete("/memory", async (_req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Learning (self-taught lessons) --------------------------------
+// Every 👍/👎 becomes a lesson; lessons shape every future answer.
+api.get("/learning", async (_req, res) => {
+  res.json({ ok: true, ...(await learningStatus()), lessons: await listLessons({ limit: 40 }) });
+});
+
+api.get("/learning/lessons", async (req, res) => {
+  const lessons = await listLessons({
+    query: req.query.query ? String(req.query.query) : undefined,
+    limit: Number(req.query.limit) || undefined,
+  });
+  // This route is what a chat calls to inject lessons into its prompt, so a
+  // lesson that shows up here has genuinely earned a use.
+  await bumpUses(lessons.map((l) => l.id));
+  res.json({ ok: true, lessons, prompt: buildLessonsPrompt(lessons) });
+});
+
+api.post("/learning/feedback", async (req, res) => {
+  const rating = String(req.body?.rating || "");
+  if (rating !== "up" && rating !== "down" && rating !== "note") {
+    return res.status(400).json({ ok: false, error: "rating must be up, down or note" });
+  }
+  const r = await recordFeedback({
+    rating,
+    note: req.body?.note,
+    excerpt: req.body?.excerpt,
+    origin: req.body?.origin === "dot" ? "dot" : "chat",
+    sessionId: req.body?.sessionId,
+  });
+  res.json(r);
+});
+
+api.post("/learning/teach", async (req, res) => {
+  try {
+    const lesson = await teach(req.body?.text);
+    res.json({ ok: true, lesson });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+api.delete("/learning/lessons/:id", async (req, res) => {
+  res.json({ ok: await forgetLesson(String(req.params.id || "")) });
+});
+
+api.delete("/learning", async (_req, res) => {
+  await forgetAllLessons();
+  res.json({ ok: true });
+});
+
+api.post("/learning/consolidate", async (_req, res) => {
+  res.json({ ok: true, ...(await runConsolidation()) });
+});
+
 // ---------- Research -------------------------------------------------------
 api.post("/research", async (req, res) => {
   const query = String(req.body?.query || "").trim();
@@ -456,6 +521,11 @@ api.get("/settings", async (_req, res) => {
 
 api.post("/settings", async (req, res) => {
   const before = await getSettings();
+  // The auto-update toggle works even under TALIA_OFFLINE — only Offline
+  // Mode itself is env-locked.
+  if ("autoUpdateEngine" in (req.body ?? {})) {
+    await setAutoUpdateEngine(!!req.body.autoUpdateEngine);
+  }
   if (before.offlineLocked) {
     return res.status(403).json({ ok: false, error: "TALIA_OFFLINE=1 forces Offline Mode; it can only be changed in the environment.", ...before });
   }

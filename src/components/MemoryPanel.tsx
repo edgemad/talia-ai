@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Brain, Plus, Trash2 } from "lucide-react";
+import { GraduationCap, Brain, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Modal } from "./ui";
 import {
+  fetchLearning,
   fetchMemory,
+  forgetAllLessons,
   forgetAllMemory,
+  forgetLessonItem,
   forgetMemoryItem,
   recallMemory,
   rememberText,
 } from "../lib/serverApi";
-import type { MemoryItem } from "../types";
+import type { Lesson, MemoryItem } from "../types";
 
 const inputStyle = {
   background: "var(--surface-strong)",
@@ -27,12 +30,21 @@ export function MemoryPanel({
   onUpload?: () => void;
 }) {
   const [items, setItems] = useState<MemoryItem[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [query, setQuery] = useState("");
   const [newFact, setNewFact] = useState("");
 
   useEffect(() => {
-    if (open) fetchMemory().then(setItems);
+    if (open) {
+      fetchMemory().then(setItems);
+      fetchLearning().then((l) => setLessons(l.lessons));
+    }
   }, [open]);
+
+  const removeLesson = async (id: string) => {
+    await forgetLessonItem(id);
+    setLessons((prev) => prev.filter((l) => l.id !== id));
+  };
 
   const search = async () => {
     if (!query.trim()) return setItems(await fetchMemory());
@@ -96,6 +108,60 @@ export function MemoryPanel({
           <Plus size={15} />
         </motion.button>
       </div>
+
+      {lessons.length > 0 && (
+        <div className="mt-4">
+          <p
+            className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide"
+            style={{ color: "var(--text-faint)" }}
+          >
+            <GraduationCap size={13} /> What Talia has learned 🎓
+          </p>
+          <div className="mt-1.5 flex max-h-36 flex-col gap-1 overflow-y-auto">
+            {lessons.map((l) => (
+              <motion.div
+                key={l.id}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="group flex items-start gap-2 rounded-2xl border px-3 py-1.5"
+                style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+              >
+                <Sparkles size={12} className="mt-0.5 shrink-0 text-accent-2" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] leading-snug" style={{ color: "var(--text)" }}>{l.text}</p>
+                  <p className="mt-0.5 text-[10px] font-bold" style={{ color: "var(--text-faint)" }}>
+                    {l.origin === "manual" ? "taught by you" : `learned from ${l.origin.startsWith("dot:") ? "a dot" : "chat"}`}
+                    {" · "}
+                    {Array.from({ length: Math.min(5, l.strength) }).map((_, i) => (
+                      <span key={i}>✦</span>
+                    ))}
+                  </p>
+                </div>
+                <button
+                  onClick={() => removeLesson(l.id)}
+                  className="rounded-full p-1 opacity-0 transition hover:bg-rose-500/10 group-hover:opacity-100"
+                  style={{ color: "var(--text-faint)" }}
+                  aria-label="Unlearn this"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </motion.div>
+            ))}
+          </div>
+          <button
+            onClick={async () => {
+              if (confirm("Let Talia unlearn everything she's been taught?")) {
+                await forgetAllLessons();
+                setLessons([]);
+              }
+            }}
+            className="mt-1 text-[10px] font-bold hover:underline"
+            style={{ color: "var(--text-faint)" }}
+          >
+            Unlearn everything…
+          </button>
+        </div>
+      )}
 
       {onUpload && (
         <button

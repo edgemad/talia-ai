@@ -87,9 +87,10 @@ describe("app update asset picker", () => {
 
 describe("hardware-aware brain picker (ODS-style tiering)", () => {
   it("recommends brighter brains on bigger machines", () => {
-    expect(recommendedBrain(16)).toBe("qwen2.5-3b");
-    expect(recommendedBrain(8)).toBe("qwen2.5-3b"); // 8 GB is exactly the 3B comfort zone
-    expect(recommendedBrain(6)).toBe("qwen2.5-1.5b");
+    // 16 GB / 8 GB have room for the sharpest 4B brain.
+    expect(recommendedBrain(16)).toBe("qwen3-4b-instruct-2507");
+    expect(recommendedBrain(8)).toBe("qwen3-4b-instruct-2507");
+    expect(recommendedBrain(6)).toBe("qwen2.5-1.5b"); // 4B needs 8 GB comfort
     expect(recommendedBrain(2)).toBe("qwen2.5-0.5b");
     expect(recommendedBrain(1)).toBe("qwen2.5-0.5b"); // never returns nothing
   });

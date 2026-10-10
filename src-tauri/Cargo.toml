@@ -1,6 +1,6 @@
 [package]
 name = "talia-ai"
-version = "0.11.2"
+version = "0.12.0"
 description = "Talia AI — an adorably cozy local LLM chat companion. All data stays on your machine."
 authors = ["Talia"]
 license = "MIT"
@@ -23,6 +23,10 @@ serde_json = "1"
 # Desktop-only plugin (no mobile `init`); excluded from Android/iOS builds.
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-single-instance = "2"
+# Auto-update: signed installer download + swap on desktop. Android is served
+# by the Play Store's own updater, so it's excluded there.
+[target."cfg(not(target_os = \"android\"))".dependencies]
+tauri-plugin-updater = "2"
 
 [profile.release]
 codegen-units = 1

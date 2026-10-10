@@ -63,45 +63,69 @@ export function isNewer(candidate, current) {
 }
 
 // ---------- GGUF model catalog -------------------------------------------------
+// Every repo/file below was verified reachable WITHOUT Hugging Face auth (a
+// gated repo would stall an unattended install), and sizeBytes is the exact
+// Content-Length of the Q4_K_M file — so download progress and the "does it
+// fit" checks are honest.
 export const GGUF_MODELS = [
   {
     id: "qwen2.5-0.5b",
     name: "Qwen 2.5 0.5B",
-    size: "~400 MB",
-    sizeBytes: 398_000_000,
+    size: "~470 MB",
+    sizeBytes: 491_400_032,
     blurb: "Featherweight and instant — great on any laptop.",
     repo: "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
     file: "qwen2.5-0.5b-instruct-q4_k_m.gguf",
     recommended: false,
   },
   {
+    id: "llama-3.2-1b",
+    name: "Llama 3.2 1B",
+    size: "~770 MB",
+    sizeBytes: 807_694_464,
+    blurb: "Meta's tiniest — friendlier voice than its size suggests.",
+    repo: "bartowski/Llama-3.2-1B-Instruct-GGUF",
+    file: "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+    recommended: false,
+  },
+  {
     id: "qwen2.5-1.5b",
     name: "Qwen 2.5 1.5B",
     size: "~1.1 GB",
-    sizeBytes: 1_120_000_000,
+    sizeBytes: 1_117_320_736,
     blurb: "The sweet spot — smart enough for chat, small enough for anything.",
     repo: "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
     file: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
     recommended: true,
   },
   {
+    id: "llama-3.2-3b",
+    name: "Llama 3.2 3B",
+    size: "~1.9 GB",
+    sizeBytes: 2_019_377_696,
+    blurb: "Meta's chatty 3B — friendly personality, needs ~5 GB RAM.",
+    repo: "bartowski/Llama-3.2-3B-Instruct-GGUF",
+    file: "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    recommended: false,
+  },
+  {
     id: "qwen2.5-3b",
     name: "Qwen 2.5 3B",
-    size: "~1.9 GB",
-    sizeBytes: 1_930_000_000,
+    size: "~2.0 GB",
+    sizeBytes: 2_104_932_768,
     blurb: "Noticeably brighter, still comfortable on 8 GB RAM.",
     repo: "Qwen/Qwen2.5-3B-Instruct-GGUF",
     file: "qwen2.5-3b-instruct-q4_k_m.gguf",
     recommended: false,
   },
   {
-    id: "llama-3.2-3b",
-    name: "Llama 3.2 3B",
-    size: "~2 GB",
-    sizeBytes: 2_020_000_000,
-    blurb: "Meta's chatty 3B — friendly personality, needs ~5 GB RAM.",
-    repo: "bartowski/Llama-3.2-3B-Instruct-GGUF",
-    file: "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    id: "qwen3-4b-instruct-2507",
+    name: "Qwen 3 4B (Instruct 2507)",
+    size: "~2.3 GB",
+    sizeBytes: 2_497_280_736,
+    blurb: "The sharpest brain in the starter lineup — a 2025 model that punches far above its size.",
+    repo: "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+    file: "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
     recommended: false,
   },
 ];
@@ -113,8 +137,10 @@ export function modelUrl(m) {
 // ---------- hardware-aware brain picker (inspired by ODS tiering) --------------
 // Minimum RAM (GB) each brain is comfortable in, model + KV cache headroom.
 const RAM_NEEDS_GB = {
+  "qwen3-4b-instruct-2507": 8,
   "qwen2.5-3b": 8,
   "llama-3.2-3b": 8,
+  "llama-3.2-1b": 4,
   "qwen2.5-1.5b": 4,
   "qwen2.5-0.5b": 2,
 };
@@ -123,12 +149,15 @@ const RAM_NEEDS_GB = {
 export function recommendedBrain(ramGB) {
   const fits = GGUF_MODELS.filter((m) => ramGB >= (RAM_NEEDS_GB[m.id] ?? 99));
   if (fits.length === 0) return GGUF_MODELS[0].id; // featherweight fallback
-  const order = ["qwen2.5-3b", "llama-3.2-3b", "qwen2.5-1.5b", "qwen2.5-0.5b"];
+  // 2507 = Qwen 3's refreshed instruct line — measurably smarter at the same
+  // size, so it leads whenever there's room.
+  const order = ["qwen3-4b-instruct-2507", "qwen2.5-3b", "llama-3.2-3b", "qwen2.5-1.5b", "llama-3.2-1b", "qwen2.5-0.5b"];
   for (const id of order) {
     if (fits.some((m) => m.id === id)) return id;
   }
   return GGUF_MODELS[0].id;
 }
+
 
 /** Friendly one-line description of this machine, for the UI. */
 export function deviceLabel(platform, arch, ramGB) {

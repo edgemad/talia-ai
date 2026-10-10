@@ -11,6 +11,7 @@ use tauri::Manager;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
+
 const API_PORT: u16 = 8787;
 
 fn api_up() -> bool {
@@ -64,6 +65,77 @@ fn find_sidecar(app: &tauri::AppHandle) -> Option<PathBuf> {
     None
 }
 
+/// Background self-updater (desktop only). Checks the signed release feed on a
+/// relaxed cadence, downloads + verifies the installer against the public key
+/// baked in at build time, then restarts into it. Any failure is logged and
+/// swallowed — updating must never take the app down. Set `TALIA_NO_AUTOUPDATE=1`
+/// to opt out (e.g. for kiosk or managed installs).
+#[cfg(not(target_os = "android"))]
+fn spawn_auto_updater(app: tauri::AppHandle) {
+    if std::env::var("TALIA_NO_AUTOUPDATE").is_ok() {
+        return;
+    }
+    // Runs on its own OS thread so it can never stall the UI event loop. The
+    // updater's calls are async; we drive them with tauri's own block_on bridge.
+    std::thread::spawn(move || {
+        // How often to look for a new version.
+        const CHECK_INTERVAL_SECS: u64 = 4 * 60 * 60;
+        // Give the sidecar/window a moment to settle before the first check so
+        // we never race startup or interrupt a first-run quickstart.
+        const FIRST_DELAY_SECS: u64 = 45;
+
+        std::thread::sleep(Duration::from_secs(FIRST_DELAY_SECS));
+        loop {
+            let updater = match app.updater_builder().build() {
+                Ok(u) => u,
+                Err(err) => {
+                    eprintln!("[talia] updater unavailable: {err}");
+                    return;
+                }
+            };
+            // `check` and `download_and_install` are async; they do their own
+            // tokio work under the hood, so drive them on the app's runtime.
+            let maybe_update = tauri::async_runtime::block_on(updater.check());
+            match maybe_update {
+                Ok(Some(update)) => {
+                    println!(
+                        "[talia] update {} available — downloading in the background…",
+                        update.version
+                    );
+                    let mut last_logged = 0u8;
+                    let installed = tauri::async_runtime::block_on(update.download_and_install(
+                        move |chunk, total| {
+                            // Log download progress in ~25% steps, not every chunk.
+                            if let Some(_t) = total {
+                                let pct = (chunk.saturating_mul(100) / _t.max(1)) as u8;
+                                let bucket = (pct / 25) * 25;
+                                if bucket != last_logged {
+                                    last_logged = bucket;
+                                    println!("[talia] update download {bucket}%");
+                                }
+                            }
+                        },
+                        || println!("[talia] update downloaded — verifying & installing…"),
+                    ));
+                    match installed {
+                        // `restart()` diverges (`-> !`), so it must be the tail
+                        // expression of its own block — never fall through to a
+                        // following statement or the diverging type won't unify.
+                        Ok(()) => {
+                            println!("[talia] update installed — restarting to apply it");
+                            app.restart()
+                        }
+                        Err(err) => eprintln!("[talia] update install failed (will retry): {err}"),
+                    }
+                }
+                Ok(None) => { /* already current */ }
+                Err(err) => eprintln!("[talia] update check failed (will retry): {err}"),
+            }
+            std::thread::sleep(Duration::from_secs(CHECK_INTERVAL_SECS));
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
@@ -75,6 +147,12 @@ pub fn run() {
             let _ = window.set_focus();
         }
     }));
+
+    // Auto-update (desktop only): Android gets updates from the Play Store.
+    // The updater reads `plugins.updater.endpoints` + `pubkey` from
+    // tauri.conf.json and verifies the signature before swapping the app.
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
         .setup(|app| {
@@ -179,6 +257,9 @@ pub fn run() {
                 }
                 // If the API never came up, the window stays on the bundled
                 // offline shell (dist/index.html), which shows the offline banner.
+
+                // Kick off background self-update now that the UI is settled.
+                spawn_auto_updater(app.handle().clone());
             }
             Ok(())
         })

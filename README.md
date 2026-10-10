@@ -41,6 +41,9 @@ subtle sheen that sweeps across surfaces. Themes persist in localStorage.
 | 🐬 **Uncensored models, one click** | Built-in catalog (Dolphin family, vision models, coders) with streaming pull progress — no refusals, you're the adult in the room |
 | 🎨 **Image · 🗣️ Speech · 🎬 Video** | Media Studio talks to your local Stable Diffusion, Piper TTS, and ComfyUI stacks |
 | 📦 **Standalone mode** | `npm run server` alone serves the whole app at `localhost:8787` |
+| 🎓 **Self-taught** | Every 👍/👎 on an answer becomes a durable lesson. Talia distills, merges and prunes them on her own clock, injects the relevant ones into future prompts, and graduates her strongest into long-term memory — so she gets better the more you use her |
+| 🔄 **Auto-updates** | Desktop rebuilds and swaps itself in the background with a signed installer (public key baked in — nothing unsigned ever runs). Android updates silently through the Play Store. Talia's built-in engine refreshes itself too |
+| 🤖 **Android & Play Store** | A real installable Android app (APK + AAB). It's a self-hosted client: the UI runs on your phone, the AI runs on your own machine, and they talk over your LAN. Signed with your Play App Signing keystore, so it can ship to the Play Console |
 
 ## 📴 Offline & online
 
@@ -225,13 +228,68 @@ React + Vite + Tailwind + Framer Motion  ←→  Express (8787)
 ## 🧪 Tests & scripts
 
 ```bash
-npm test          # 24 tests: embeddings, memory, research, proxy, export
+npm test          # full suite: learning, runtime, memory, research, proxy, export, games
 npm run typecheck
 npm run build     # emits dist/ + self-contained dist/talia-preview.html
 npm run sidecar   # bundle server → standalone SEA binary (self-tested)
 npm run icons     # regenerate app icons from the mascot
 npm run tauri build  # native installers (macOS dmg / Windows nsis,msi / Linux deb,rpm,appimage)
+
+# Android / Play Store
+npm run android:init     # scaffold + patch the project for Play (versionCode, cleartext-LAN)
+npm run android:bundle   # signed AAB for the Play Console
+npm run android:apk      # sideloadable APK
 ```
+
+## 🎓 Self-taught (how Talia learns)
+
+Hover any assistant answer and tap 👍 or 👎 (add a note to teach faster). That
+feedback flows into a local lessons store:
+
+1. **Distilled** — a note becomes a lesson (`Keep doing: …` / `Avoid: …`); similar
+   lessons merge instead of piling up.
+2. **Injected** — the relevant lessons are woven into the system prompt of future
+   chats *and* Dots, silently.
+3. **Graduated** — lessons you reinforce (or that keep proving right) are promoted
+   into long-term memory so they survive a memory wipe of the raw store.
+4. **Pruned** — stale lessons decay and contradicted ones get overruled by newer
+   feedback.
+
+Everything is deterministic and offline — no cloud, no extra model. Open
+**Memory** in the sidebar to review, edit or unlearn lessons. Kill switch:
+`TALIA_LEARNING_DISABLED=1`.
+
+## 🔄 Auto-update
+
+- **Desktop (Tauri):** the app checks the GitHub releases feed on launch and
+  every 4 h, downloads the matching installer, verifies its **minisign
+  signature** against the public key baked into the binary, then swaps itself
+  and relaunches. Unsigned builds never run.
+- **Engine:** Talia's built-in llama.cpp engine self-refreshes in the background
+  so you always get the newest CPU/GPU build. Toggle it off in
+  **Settings → Updates**, or set `TALIA_ENGINE_AUTOUPDATE=0`.
+- **Android / Play Store:** updates are handled by Play itself.
+
+Release signing lives in `.tauri-signing/` (gitignored). To cut a signed
+release, set `TAURI_SIGNING_PRIVATE_KEY` in CI — the workflow signs installers
+and uploads the `latest.json` the updater consumes.
+
+## 🤖 Android & Play Store
+
+The Android app is a **self-hosted client**: the UI ships in the APK, the AI
+runs on your own machine (`npm run server` or the desktop app), and they talk
+over your LAN. Point the app at your server's `http://<lan-ip>:8787` in
+Settings.
+
+```bash
+npm run android:init        # scaffold + patch for Play (versionCode, cleartext-LAN, signing)
+npm run android:bundle      # build the signed AAB the Play Console accepts
+npm run android:apk         # or a sideloadable APK
+```
+
+`scripts/android-play.mjs` derives a monotonic `versionCode` from semver
+(Play rejects backwards versions) and writes a network-security config that
+allows cleartext **only** to loopback/LAN — the internet stays HTTPS-only.
 
 ## 🛠️ Troubleshooting
 

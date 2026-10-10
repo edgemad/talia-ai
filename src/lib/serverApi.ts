@@ -1,5 +1,5 @@
 // Client for Talia's v2 server features.
-import type { CatalogModel, ChatMessage, MemoryItem, ResearchSource } from "../types";
+import type { CatalogModel, ChatMessage, Lesson, MemoryItem, ResearchSource } from "../types";
 import { apiUrl } from "./appMode";
 
 async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
@@ -74,6 +74,57 @@ export async function forgetMemoryItem(id: string) {
 
 export async function forgetAllMemory() {
   await fetch(apiUrl("/api/memory"), { method: "DELETE" });
+}
+
+// ---------- Learning (self-taught lessons) -----------------------------------
+export interface LearningStatus {
+  enabled: boolean;
+  lessons: number;
+  stats: { lastConsolidatedAt: number | null; distilled: number; graduated: number };
+}
+
+export async function fetchLessons(query?: string, limit = 6): Promise<Lesson[]> {
+  try {
+    const qs = `?limit=${limit}${query ? `&query=${encodeURIComponent(query)}` : ""}`;
+    const r = await fetch(apiUrl(`/api/learning/lessons${qs}`));
+    const j = await r.json();
+    return j?.ok ? j.lessons : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchLearning(): Promise<{ status: LearningStatus; lessons: Lesson[] }> {
+  try {
+    const r = await fetch(apiUrl("/api/learning"));
+    const j = await r.json();
+    return j?.ok
+      ? { status: { enabled: j.enabled, lessons: j.lessons, stats: j.stats }, lessons: j.lessons ?? [] }
+      : { status: { enabled: true, lessons: 0, stats: { lastConsolidatedAt: null, distilled: 0, graduated: 0 } }, lessons: [] };
+  } catch {
+    return { status: { enabled: true, lessons: 0, stats: { lastConsolidatedAt: null, distilled: 0, graduated: 0 } }, lessons: [] };
+  }
+}
+
+export async function sendLessonFeedback(payload: {
+  rating: "up" | "down";
+  note?: string;
+  excerpt?: string;
+  sessionId?: string | null;
+}): Promise<{ ok: boolean; lesson?: Lesson }> {
+  return postJson("/api/learning/feedback", payload);
+}
+
+export async function teachLesson(text: string): Promise<{ ok: boolean; lesson?: Lesson }> {
+  return postJson("/api/learning/teach", { text });
+}
+
+export async function forgetLessonItem(id: string) {
+  await fetch(apiUrl(`/api/learning/lessons/${encodeURIComponent(id)}`), { method: "DELETE" });
+}
+
+export async function forgetAllLessons() {
+  await fetch(apiUrl("/api/learning"), { method: "DELETE" });
 }
 
 // ---------- Research --------------------------------------------------------

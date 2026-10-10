@@ -103,6 +103,10 @@ jobs:
           cargo install tauri-cli --version '^2' --locked
           cargo tauri android init
 
+      - name: Patch Android project for the Play Store
+        if: matrix.android
+        run: node scripts/android-play.mjs
+
       - name: Point Android build at a stub sidecar (client-only build)
         if: matrix.android
         run: |
@@ -117,33 +121,48 @@ jobs:
             fs.writeFileSync(p, JSON.stringify(c,null,2));
           "
 
-      - name: Build Android APK
+      # Sign with the Play App Signing keystore when the secrets are present;
+      # unsigned otherwise (the sideload APK still works for testing).
+      - name: Build Android APK + AAB (Play Store bundle)
         if: matrix.android
         working-directory: src-tauri
         env:
-          TAURI_ANDROID_KEYSTORE_PATH: ''
-        run: cargo tauri android build --target aarch64 --apk
+          TAURI_ANDROID_KEYSTORE_PATH: ${{ secrets.ANDROID_KEYSTORE_PATH }}
+          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TAURI_ANDROID_KEYSTORE_KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_KEY_ALIAS }}
+          TAURI_ANDROID_KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: cargo tauri android build --target aarch64 --bundle
 
-      - name: Upload Android APK to release
+      - name: Upload Android APK + AAB to release
         if: matrix.android
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
-          test -n "$APK"
           VERSION=$(node -p "require('./package.json').version")
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
+          AAB=$(find src-tauri/gen/android/app/build/outputs/bundle -name '*.aab' | head -n 1)
+          test -n "$APK"
           cp "$APK" "Talia.AI_${VERSION}_aarch64.apk"
           gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.apk" --repo "$GITHUB_REPOSITORY" --clobber
+          # The .aab is what the Play Console accepts; upload it alongside.
+          if [ -n "$AAB" ]; then
+            cp "$AAB" "Talia.AI_${VERSION}_aarch64.aab"
+            gh release upload "$GITHUB_REF_NAME" "Talia.AI_${VERSION}_aarch64.aab" --repo "$GITHUB_REPOSITORY" --clobber
+          fi
 
       - name: Build Tauri app
         if: ${{ !matrix.android }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signed self-updates: the updater verifies these against the public
+          # key baked into tauri.conf.json before swapping the app.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Talia AI v__VERSION__"
-          releaseBody: "Cozy local LLM chat companion — cross-chat memory, research, media studio, bots & skills. Desktop runs everything locally; the Android app is a client for your computer's Talia server."
+          releaseBody: "Self-hosted AI workstation — runs entirely on your own machines, no drivers. Streaming chat, cross-chat memory, live research, media studio, always-on Dots, and a self-taught engine that learns from your feedback. Auto-updates on desktop; Android ships to the Play Store."
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

@@ -97,4 +97,55 @@ export async function checkUpdates({ force = false } = {}) {
   return cache;
 }
 
+// ---------- background engine auto-update -------------------------------------
+// Once an hour (unattended), if a newer engine build exists, quietly install
+// it — the next restart picks it up. Only the ENGINE is swapped here; the app
+// itself updates through the signed Tauri updater (desktop) or the Play Store
+// (Android). Honors Offline Mode, the auto-update toggle and the running
+// engine (never restarts a live engine out from under a chat).
+const ENGINE_CHECK_MS = 60 * 60 * 1000;
+
+let engineTimer = null;
+
+async function engineAutoUpdateTick() {
+  try {
+    const { getSettings } = await import("./settings.mjs");
+    const settings = await getSettings();
+    if (!settings.autoUpdateEngine || settings.offline) return { skipped: true };
+    const { runtimeStatus, installRuntime } = await import("./runtime.mjs");
+    const status = await runtimeStatus();
+    if (!status.installed || !status.version || !status.supported) return { skipped: true };
+    const rel = await latestRuntimeRelease();
+    if (!rel?.tag || !isNewer(rel.tag, status.version)) return { upToDate: true };
+    console.log(`🔄 Engine ${rel.tag} available (have ${status.version}) — auto-updating…`);
+    const r = await installRuntime({});
+    if (r.ok) console.log(`🔄 Engine auto-updated to ${r.version ?? rel.tag} ✓`);
+    else console.log(`🔄 Engine auto-update failed: ${r.error}`);
+    return r;
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+export function startEngineAutoUpdate({ intervalMs = ENGINE_CHECK_MS, firstCheckMs = 3 * 60 * 1000 } = {}) {
+  if (process.env.TALIA_ENGINE_AUTOUPDATE === "0") return;
+  if (engineTimer) return;
+  // First check a few minutes after boot — never delay startup for it.
+  const first = setTimeout(() => {
+    void engineAutoUpdateTick();
+  }, firstCheckMs);
+  first.unref?.();
+  engineTimer = setInterval(() => {
+    void engineAutoUpdateTick();
+  }, intervalMs);
+  engineTimer.unref?.();
+}
+
+export function stopEngineAutoUpdate() {
+  if (engineTimer) {
+    clearInterval(engineTimer);
+    engineTimer = null;
+  }
+}
+
 export { RUNTIME_BASE_URL };

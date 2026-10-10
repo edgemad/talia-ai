@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { Brain, Check, Copy, RefreshCw, Volume2 } from "lucide-react";
+import { Brain, Check, Copy, RefreshCw, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
 import type { ChatMessage } from "../types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,17 +23,20 @@ export function MessageBubble({
   theme = "sakura",
   onRemember,
   onRegenerate,
+  onFeedback,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
   theme?: string;
   onRemember?: (m: ChatMessage) => void;
   onRegenerate?: (m: ChatMessage) => void;
+  onFeedback?: (m: ChatMessage, rating: "up" | "down") => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [remembered, setRemembered] = useState(false);
+  const [rated, setRated] = useState<"up" | "down" | null>(null);
 
   const copy = async () => {
     await navigator.clipboard.writeText(message.content);
@@ -52,6 +55,12 @@ export function MessageBubble({
     onRemember?.(message);
     setRemembered(true);
     setTimeout(() => setRemembered(false), 1800);
+  };
+
+  const rate = (rating: "up" | "down") => {
+    if (rated) return;
+    setRated(rating);
+    onFeedback?.(message, rating);
   };
 
   return (
@@ -138,6 +147,22 @@ export function MessageBubble({
                   title="Remember this"
                 >
                   {remembered ? <Check size={12} className="text-ok" /> : <Brain size={12} />}
+                </button>
+                <button
+                  onClick={() => rate("up")}
+                  className="rounded-full p-1.5 hover:bg-white/40"
+                  style={{ color: rated === "up" ? "var(--ok)" : "var(--text-faint)" }}
+                  title="Good answer — Talia learns from this"
+                >
+                  <ThumbsUp size={12} fill={rated === "up" ? "currentColor" : "none"} />
+                </button>
+                <button
+                  onClick={() => rate("down")}
+                  className="rounded-full p-1.5 hover:bg-white/40"
+                  style={{ color: rated === "down" ? "var(--warn)" : "var(--text-faint)" }}
+                  title="Missed the mark — Talia learns from this"
+                >
+                  <ThumbsDown size={12} fill={rated === "down" ? "currentColor" : "none"} />
                 </button>
                 {onRegenerate && (
                   <button
