@@ -83,12 +83,16 @@ export function patchGradle(kts, version) {
   const code = versionCodeFor(version);
   const versionName = String(version ?? "").trim() || "1.0";
   let out = String(kts ?? "");
+  // Replace the ENTIRE assignment line, not just up to the first `)`.
+  // The template lines already end in `.toInt()` / `)`, and a partial match
+  // used to leave the tail behind — producing `.toInt()).toInt()` and a
+  // Kotlin syntax error that failed the Android gradle build in CI.
   out = out.replace(
-    /versionCode\s*=\s*[^)\n]+/,
+    /versionCode[ \t]*=[ \t]*[^\r\n]+/,
     `versionCode = tauriProperties.getProperty("tauri.android.versionCode", "${code}").toInt()`,
   );
   out = out.replace(
-    /versionName\s*=\s*[^)\n]+/,
+    /versionName[ \t]*=[ \t]*[^\r\n]+/,
     `versionName = tauriProperties.getProperty("tauri.android.versionName", "${versionName}")`,
   );
   return out;

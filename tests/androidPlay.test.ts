@@ -79,4 +79,32 @@ describe("gradle patching", () => {
     expect(out).toContain('tauri.android.versionName", "0.12.0"');
     expect(out).toContain("minSdk = 24"); // untouched
   });
+
+  it("rewrites each assignment as a complete line — no template leftovers", () => {
+    const out = patchGradle(kts, "0.12.0");
+    const lines = out.split("\n").map((l) => l.trim());
+    expect(lines).toContain(
+      'versionCode = tauriProperties.getProperty("tauri.android.versionCode", "12000").toInt()',
+    );
+    expect(lines).toContain(
+      'versionName = tauriProperties.getProperty("tauri.android.versionName", "0.12.0")',
+    );
+    // A partial regex match used to leave `).toInt()` / `)` behind, which
+    // broke the Kotlin compile in the Android CI build.
+    expect(out).not.toContain(".toInt()).toInt()");
+    expect(out).not.toContain('"0.12.0"))');
+  });
+
+  it("emits balanced parentheses on every line (valid Kotlin)", () => {
+    for (const line of patchGradle(kts, "0.12.0").split("\n")) {
+      const open = (line.match(/\(/g) ?? []).length;
+      const close = (line.match(/\)/g) ?? []).length;
+      expect({ line, open, close }).toEqual({ line, open, close: open });
+    }
+  });
+
+  it("is idempotent", () => {
+    const once = patchGradle(kts, "0.12.0");
+    expect(patchGradle(once, "0.12.0")).toBe(once);
+  });
 });
