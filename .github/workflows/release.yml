@@ -284,17 +284,21 @@ jobs:
           # would return the commit message instead of the annotation. Fetch
           # the real tag object before reading it.
           git fetch origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" --no-tags --force || true  # branch-triggered releases may have no tag object yet -> fallback below
-          # Only an ANNOTATED tag carries real release notes. Branch-triggered
-          # releases get a lightweight tag from GitHub's release API, and
-          # %(contents) on that would return the commit subject — publishing a
-          # random commit message as the release notes. Keep the defaults.
-          if [ "$(git cat-file -t "$GITHUB_REF_NAME" 2>/dev/null)" != "tag" ]; then
-            echo "Tag $GITHUB_REF_NAME is missing or lightweight - keeping the default notes."
-            exit 0
-          fi
-          NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
-          if [ -n "$NOTES" ]; then
-            gh release edit "$GITHUB_REF_NAME" --notes "$NOTES"
+          # Prefer the ANNOTATED tag's message. A branch-triggered release gets
+          # a lightweight tag from GitHub's release API, and %(contents) on that
+          # is just a commit subject — never publish that as release notes.
+          # Fall back to the default body (kept in sync with `releaseBody` on
+          # the Build Tauri app step) so this job is SELF-HEALING: every run
+          # leaves the release with the intended text instead of whatever an
+          # earlier run wrote.
+          DEFAULT_BODY="Self-hosted AI workstation — runs entirely on your own machines, no drivers. Streaming chat, cross-chat memory, live research, media studio, always-on Dots, and a self-taught engine that learns from your feedback. Auto-updates on desktop; Android ships to the Play Store."
+          NOTES=""
+          if [ "$(git cat-file -t "$GITHUB_REF_NAME" 2>/dev/null)" = "tag" ]; then
+            NOTES=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
           else
-            echo "Tag $GITHUB_REF_NAME has no annotation - keeping the default notes."
+            echo "Tag $GITHUB_REF_NAME is missing or lightweight - will use the default notes."
           fi
+          if [ -z "$NOTES" ]; then
+            NOTES="$DEFAULT_BODY"
+          fi
+          gh release edit "$GITHUB_REF_NAME" --notes "$NOTES"
